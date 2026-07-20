@@ -35,7 +35,7 @@ async def fetch_image(client, url):
         pass
     return None
 
-# --- دالة لتنسيق الأرقام والنسب بشكل دقيق ونظيف ---
+# --- دالة لتنسيق الأرقام في حال لم تكن جاهزة ---
 def format_stat_value(name, val, is_planar=False):
     try:
         f_val = float(val)
@@ -98,8 +98,6 @@ async def create_character_card(client, char_data):
             r_lvl = r.get("level", 0)
             r_icon = r.get("icon", "")
             
-            is_planar = (idx in [5, 6])
-            
             draw.rectangle([455, y_offset, 1055, y_offset + 95], fill=(26, 31, 43, 255), outline=(55, 75, 100, 255))
             
             if r_icon:
@@ -113,28 +111,30 @@ async def create_character_card(client, char_data):
             draw.text((980, y_offset + 10), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
 
             main_stat = r.get("main_affix", {}) or r.get("mainstat", {})
-            m_name = main_stat.get("name", "") or main_stat.get("type", "") or main_stat.get("field", "")
-            m_val = main_stat.get("value", "")
+            m_name = main_stat.get("name", "") or main_stat.get("type", "")
+            m_display = main_stat.get("display", "") 
             
+            if not m_display:
+                m_display = format_stat_value(m_name, main_stat.get("value", ""), is_planar=(idx in [5, 6]))
+                
             if m_name:
-                clean_m_val = format_stat_value(m_name, m_val, is_planar=is_planar)
-                draw.text((550, y_offset + 30), f"Main: {m_name} ({clean_m_val})", font=font_small, fill=(255, 215, 100, 255))
+                draw.text((550, y_offset + 30), f"Main: {m_name} ({m_display})", font=font_small, fill=(255, 215, 100, 255))
 
-            substats = r.get("sub_affix_list", []) or r.get("substats", []) or r.get("sub_stats", [])
+            # --- التعديل الجذري هنا: جلب السبستاتس واستخدام display ---
+            substats = r.get("sub_affix", []) or r.get("sub_affix_list", []) or r.get("substats", [])
             sub_text = ""
             
             for sub in substats:
-                s_name = sub.get("name", "") or sub.get("field", "") or sub.get("type", "")
-                s_val = sub.get("value", "")
+                s_name = sub.get("name", "") or sub.get("type", "") or sub.get("field", "")
+                # Mihomo يعطي القيمة المنسقة جاهزة في "display" مثل "11.6%"
+                s_display = sub.get("display", "")
                 
-                if not s_name and "stat" in sub:
-                    s_name = sub["stat"].get("name", "") or sub["stat"].get("field", "")
-                    s_val = sub["stat"].get("value", "")
+                if not s_display:
+                    s_display = format_stat_value(s_name, sub.get("value", ""))
                 
-                if s_name and s_val is not None:
-                    clean_s_val = format_stat_value(s_name, s_val, is_planar=False)
-                    short_name = str(s_name).replace("_", " ")[:6]
-                    sub_text += f"{short_name}: {clean_s_val}  "
+                if s_name and s_display:
+                    short_name = str(s_name).replace("_", " ")[:7]
+                    sub_text += f"{short_name}: {s_display}  "
             
             if not sub_text:
                 sub_text = "No Substats recorded"
@@ -226,7 +226,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         return
 
                 await query.message.reply_text("❌ تعذر إنشاء البطاقة.")
-            except Exception:
+            except Exception as e:
+                print(f"Error generating card: {e}")
                 await query.message.reply_text("❌ حدث خطأ أثناء تجهيز الصورة.")
 
 def main():
