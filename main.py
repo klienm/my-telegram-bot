@@ -56,6 +56,7 @@ async def create_character_card(client, char_data):
     equip = char_data.get("equip", {}) or char_data.get("equipment", {})
     lc_name = equip.get("name", "None") if isinstance(equip, dict) else "None"
     lc_level = equip.get("level", "-") if isinstance(equip, dict) else "-"
+    lc_icon = equip.get("icon", "") if isinstance(equip, dict) else ""
 
     relics = char_data.get("relics", []) or char_data.get("relicList", [])
 
@@ -65,6 +66,7 @@ async def create_character_card(client, char_data):
     draw.rectangle([10, 10, 1090, 740], outline=(65, 80, 110, 255), width=2)
     draw.rectangle([20, 20, 420, 730], fill=(24, 28, 38, 255), outline=(45, 60, 85, 255))
 
+    # صورة الشخصية
     if icon_path:
         img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{icon_path}"
         avatar_img = await fetch_image(client, img_url)
@@ -83,10 +85,19 @@ async def create_character_card(client, char_data):
     draw.text((40, 305), char_name.upper(), font=font_title, fill=(255, 215, 100, 255))
     draw.text((40, 335), f"Level: {char_level} / 80", font=font_sub, fill=(200, 210, 230, 255))
 
+    # قسم السلاح (Light Cone) مع الصورة
     draw.rectangle([35, 370, 405, 470], fill=(20, 24, 34, 255), outline=(50, 70, 95, 255))
     draw.text((50, 380), "LIGHT CONE", font=font_bold, fill=(100, 180, 255, 255))
-    draw.text((50, 405), f"{lc_name[:32]}", font=font_bold, fill=(255, 255, 255, 255))
+    draw.text((50, 405), f"{lc_name[:25]}", font=font_bold, fill=(255, 255, 255, 255))
     draw.text((50, 435), f"Lvl: {lc_level} / 80", font=font_small, fill=(150, 220, 150, 255))
+
+    # جلب ووضع صورة السلاح (Light Cone)
+    if lc_icon:
+        lc_img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{lc_icon}"
+        lc_img = await fetch_image(client, lc_img_url)
+        if lc_img:
+            lc_img = lc_img.resize((80, 80)) # تصغير صورة السلاح لتناسب المربع
+            card.paste(lc_img, (310, 380), lc_img)
 
     draw.rectangle([440, 20, 1070, 730], fill=(20, 24, 34, 255), outline=(45, 60, 85, 255))
     draw.text((460, 35), "EQUIPPED RELICS & STATS", font=font_title, fill=(255, 165, 80, 255))
@@ -120,26 +131,29 @@ async def create_character_card(client, char_data):
             if m_name:
                 draw.text((550, y_offset + 30), f"Main: {m_name} ({m_display})", font=font_small, fill=(255, 215, 100, 255))
 
-            # --- التعديل الجذري هنا: جلب السبستاتس واستخدام display ---
+            # --- ترتيب السبستاتس على شكل شبكة 2x2 ---
             substats = r.get("sub_affix", []) or r.get("sub_affix_list", []) or r.get("substats", [])
-            sub_text = ""
             
-            for sub in substats:
+            for i, sub in enumerate(substats[:4]): # نأخذ أول 4 سبستاتس بحد أقصى
                 s_name = sub.get("name", "") or sub.get("type", "") or sub.get("field", "")
-                # Mihomo يعطي القيمة المنسقة جاهزة في "display" مثل "11.6%"
                 s_display = sub.get("display", "")
                 
                 if not s_display:
                     s_display = format_stat_value(s_name, sub.get("value", ""))
                 
                 if s_name and s_display:
-                    short_name = str(s_name).replace("_", " ")[:7]
-                    sub_text += f"{short_name}: {s_display}  "
+                    # تنظيف الاسم وتجهيز النص
+                    short_name = str(s_name).replace("_", " ")[:12]
+                    stat_text = f"{short_name}: {s_display}"
+                    
+                    # حساب الإحداثيات (الأعمدة والصفوف)
+                    col_x = 550 if i % 2 == 0 else 780 # العمود الأول عند 550، الثاني عند 780
+                    row_y = y_offset + 55 if i < 2 else y_offset + 75 # الصف الأول عند 55، الثاني عند 75
+                    
+                    draw.text((col_x, row_y), stat_text, font=font_small, fill=(170, 185, 205, 255))
             
-            if not sub_text:
-                sub_text = "No Substats recorded"
-                
-            draw.text((550, y_offset + 55), sub_text[:85], font=font_small, fill=(170, 185, 205, 255))
+            if not substats:
+                draw.text((550, y_offset + 55), "No Substats recorded", font=font_small, fill=(170, 185, 205, 255))
             
             y_offset += 105
     else:
@@ -152,7 +166,7 @@ async def create_character_card(client, char_data):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
-        "👋 **أهلاً بك يا بشار!**\n\n"
+        "👋 **أهلاً بك!**\n\n"
         "أدخل الـ UID لعرض قائمة شخصياتك بدقة:\n"
         "🔹 `/hsr <UID>`"
     )
