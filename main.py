@@ -2,8 +2,6 @@ import os
 import httpx
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -23,120 +21,47 @@ def run_dummy_server():
 
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- دالة جلب صورة من رابط ---
-async def fetch_image(client, url):
-    try:
-        res = await client.get(url, timeout=5)
-        if res.status_code == 200:
-            return Image.open(BytesIO(res.content)).convert("RGBA")
-    except Exception:
-        pass
-    return None
-
-# --- دالة رسم بطاقة البيلد المصورة ---
-async def create_character_card(client, char_data):
-    char_name = char_data.get("name", "Character")
-    char_level = char_data.get("level", 1)
-    icon_path = char_data.get("icon", "")
-    
-    # تفاصيل السلاح
-    equip = char_data.get("equip", {}) or char_data.get("equipment", {})
-    lc_name = equip.get("name", "None") if isinstance(equip, dict) else "None"
-    lc_level = equip.get("level", "-") if isinstance(equip, dict) else "-"
-    lc_icon = equip.get("icon", "") if isinstance(equip, dict) else ""
-
-    # تفاصيل الريليكس
-    relics = char_data.get("relics", []) or char_data.get("relicList", [])
-
-    # خلفية البطاقة
-    card = Image.new("RGBA", (900, 500), (15, 18, 26, 255))
-    draw = ImageDraw.Draw(card)
-
-    # إطارات وحواف
-    draw.rectangle([10, 10, 890, 490], outline=(60, 70, 95, 255), width=2)
-    draw.rectangle([20, 20, 320, 480], fill=(22, 27, 38, 255), outline=(40, 50, 70, 255))
-
-    # جلب وصورة الشخصية
-    if icon_path:
-        img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{icon_path}"
-        avatar_img = await fetch_image(client, img_url)
-        if avatar_img:
-            avatar_img = avatar_img.resize((260, 260))
-            card.paste(avatar_img, (40, 30), avatar_img)
-
-    # النصوص الأساسية
-    try:
-        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
-        font_sub = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
-        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
-    except Exception:
-        font_title = font_sub = font_bold = ImageFont.load_default()
-
-    # اسم الشخصية والمستوى
-    draw.text((40, 310), char_name.upper(), font=font_title, fill=(245, 200, 100, 255))
-    draw.text((40, 350), f"Level: {char_level} / 80", font=font_sub, fill=(200, 210, 225, 255))
-
-    # قسم السلاح (Light Cone)
-    draw.rectangle([340, 20, 880, 140], fill=(22, 28, 42, 255), outline=(50, 65, 90, 255))
-    draw.text((360, 30), "LIGHT CONE (WEAPON)", font=font_bold, fill=(100, 180, 255, 255))
-    draw.text((360, 65), f"{lc_name}", font=font_title, fill=(255, 255, 255, 255))
-    draw.text((360, 100), f"Level: {lc_level} / 80", font=font_sub, fill=(150, 220, 150, 255))
-
-    # قسم الريليكس (Relics)
-    draw.rectangle([340, 155, 880, 480], fill=(20, 24, 35, 255), outline=(45, 55, 75, 255))
-    draw.text((360, 170), "EQUIPPED RELICS", font=font_bold, fill=(255, 170, 90, 255))
-
-    y_offset = 210
-    if relics:
-        for idx, r in enumerate(relics[:6], 1):
-            r_name = r.get("name", f"Relic #{idx}")
-            r_lvl = r.get("level", 0)
-            
-            draw.text((360, y_offset), f"• {r_name[:28]}", font=font_sub, fill=(220, 225, 235, 255))
-            draw.text((780, y_offset), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
-            y_offset += 42
-    else:
-        draw.text((360, 220), "No Relics Equipped", font=font_sub, fill=(170, 170, 170, 255))
-
-    buf = BytesIO()
-    card.save(buf, format="PNG")
-    buf.seek(0)
-    return buf
-
 # --- أمر البداية ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "👋 **أهلاً بك!**\n\n"
-        "عرض بطاقات البيلد المصورة لـ Honkai: Star Rail!\n\n"
-        "🔹 `/hsr <UID>` - لفحص الحساب واختيار الشخصية"
+        "عرض بيلدات وإحصائيات شخصيات Honkai: Star Rail!\n\n"
+        "🔹 `/hsr <UID>` - لفحص الحساب واختيار الشخصية\n\n"
+        "⚠️ *تنبيه:* تأكد من تفعيل **Show Character Details** داخل اللعبة."
     )
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
-# --- أمر HSR ---
+# --- أمر Honkai: Star Rail ---
 async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ يرجى كتابة الـ UID بعد الأمر!\nمثال: `/hsr 800000000`", parse_mode='Markdown')
         return
 
     uid = context.args[0]
-    await update.message.reply_text("⏳ جاري جلب البيانات...")
+    await update.message.reply_text("⏳ جاري جلب بيانات الحساب...")
 
     url = f"https://api.mihomo.me/sr_info_parsed/{uid}?lang=en"
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(url, timeout=12)
+            response = await client.get(url, timeout=15)
             if response.status_code != 200:
-                await update.message.reply_text("❌ لم يتم العثور على الحساب.")
+                await update.message.reply_text("❌ لم يتم العثور على الحساب. تأكد من صحة الـ UID.")
                 return
 
             data = response.json()
             player = data.get("player", {})
-            nickname = player.get("nickname", "Player")
-            avatars = data.get("characters", []) or data.get("avatar_list", [])
+            nickname = player.get("nickname", "لاعب")
+            level = player.get("level", "-")
+            
+            # فحص الشخصيات بالمسارين المحتملين
+            avatars = data.get("characters") or data.get("avatar_list") or []
 
             if not avatars:
-                await update.message.reply_text("⚠️ لا توجد شخصيات معروضة بالحساب.")
+                await update.message.reply_text(
+                    f"👤 **الاسم:** {nickname}\n📊 **المستوى:** {level}\n\n"
+                    "⚠️ *لم يتم العثور على شخصيات معروضة.*\nتأكد من إظهار الشخصيات والتفاصيل في الـ Profile داخل اللعبة."
+                )
                 return
 
             keyboard = []
@@ -145,12 +70,21 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 keyboard.append([InlineKeyboardButton(f"⚔️ {char_name}", callback_data=f"hsr_{uid}_{idx}")])
 
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(f"👤 **اللاعب:** {nickname}\n👇 **اختر الشخصية لتوليد البطاقة:**", reply_markup=reply_markup, parse_mode='Markdown')
 
-        except Exception:
-            await update.message.reply_text("❌ حدث خطأ أثناء جلب البيانات.")
+            response_msg = (
+                f"🚀 **Honkai: Star Rail Profile**\n\n"
+                f"👤 **الاسم:** {nickname}\n"
+                f"📊 **المستوى:** {level}\n"
+                f"👥 **الشخصيات المتاحة:** {len(avatars)}\n\n"
+                f"👇 **اختر الشخصية لعرض البيلد:**"
+            )
 
-# --- عند ضغط زر الشخصية ---
+            await update.message.reply_text(response_msg, reply_markup=reply_markup, parse_mode='Markdown')
+
+        except Exception as e:
+            await update.message.reply_text("❌ حدث خطأ في الاتصال بالسيرفر، يرجى المحاولة بعد قليل.")
+
+# --- المعالج عند ضغط زر الشخصية ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -160,37 +94,65 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid = data_parts[1]
         char_idx = int(data_parts[2])
 
-        await query.edit_message_text("🎨 جاري تصميم ورسم بطاقة البيلد...")
+        await query.edit_message_text("⏳ جاري جلب البيلد...")
 
         url = f"https://api.mihomo.me/sr_info_parsed/{uid}?lang=en"
 
         async with httpx.AsyncClient() as client:
             try:
-                res = await client.get(url, timeout=12)
+                res = await client.get(url, timeout=15)
                 if res.status_code == 200:
                     data = res.json()
-                    avatars = data.get("characters", []) or data.get("avatar_list", [])
+                    avatars = data.get("characters") or data.get("avatar_list") or []
                     
                     if char_idx < len(avatars):
-                        char_data = avatars[char_idx]
+                        char = avatars[char_idx]
+                        char_name = char.get("name", "غير معروف")
+                        char_level = char.get("level", 1)
                         
-                        # توليد الصورة مرسومة بالكامل
-                        card_buf = await create_character_card(client, char_data)
-                        
-                        await query.message.reply_photo(photo=card_buf)
+                        # السلاح
+                        equip = char.get("equip") or char.get("equipment") or {}
+                        lc_name = equip.get("name", "بدون سلاح") if isinstance(equip, dict) else "بدون سلاح"
+                        lc_level = equip.get("level", "-") if isinstance(equip, dict) else "-"
+
+                        # الريليكس
+                        relics = char.get("relics") or char.get("relicList") or []
+                        relics_text = ""
+                        if relics:
+                            for i, r in enumerate(relics, 1):
+                                r_name = r.get("name", f"قطعة #{i}")
+                                r_lvl = r.get("level", 0)
+                                relics_text += f"\n  🔹 **{r_name}:** +{r_lvl}"
+                        else:
+                            relics_text = "\n  ⚠️ لا توجد قطع ريليكس مجهزة."
+
+                        # رابط كارت Enka الفخم الخارجي للمعاينة بضغط زر
+                        enka_url = f"https://enka.network/hsr/{uid}/"
+
+                        build_msg = (
+                            f"⚔️ **{char_name} Build**\n\n"
+                            f"📈 **المستوى:** {char_level} / 80\n"
+                            f"🗡️ **السلاح (Light Cone):** {lc_name} (Lvl {lc_level})\n"
+                            f"\n🛡️ **الريليكس المجهزة:**{relics_text}\n\n"
+                            f"🎨 [عرض البطاقة المصورة الكاملة على Enka]({enka_url})"
+                        )
+
+                        await query.message.reply_text(build_msg, parse_mode='Markdown', disable_web_page_preview=False)
                         return
 
-                await query.message.reply_text("❌ تعذر إنشاء الصورة.")
-            except Exception:
-                await query.message.reply_text("❌ حدث خطأ أثناء تجهيز البطاقة.")
+                await query.message.reply_text("❌ تعذر جلب البيانات.")
+            except Exception as e:
+                await query.message.reply_text("❌ حدث خطأ أثناء معالجة الطلب.")
 
+# --- تشغيل البوت ---
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("hsr", hsr_check))
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    print("🚀 البوت يعمل الآن بنجاح مع توليد الصور المباشرة!")
+    print("🚀 البوت يعمل بنجاح!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
