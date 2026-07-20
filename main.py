@@ -7,10 +7,9 @@ from PIL import Image, ImageDraw, ImageFont
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# التوكن الجديد الذي قمت بتزويدي به
 BOT_TOKEN = "8975704106:AAFZQq6zBx6cSYYR2nnEB6o4N2VvgbiAI20"
 
-# --- سيرفر وهمي لإبقاء الخدمة تعمل على Render 24/7 ---
+# --- سيرفر HTTP أساسي لضمان استجابة Render وعدم إغلاق التطبيق ---
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -18,10 +17,12 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is Running Live!")
 
 def run_dummy_server():
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
+    print(f"🌐 Dummy server running on port {port}")
     server.serve_forever()
 
+# تشغيل السيرفر في الخلفية
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
 # --- دالة جلب الصور من الإنترنت بأمان ---
@@ -52,22 +53,16 @@ async def create_character_card(client, char_data):
     char_level = char_data.get("level", 1)
     icon_path = char_data.get("icon", "")
     
-    # تفاصيل السلاح (Light Cone)
     equip = char_data.get("equip", {}) or char_data.get("equipment", {})
     lc_name = equip.get("name", "None") if isinstance(equip, dict) else "None"
     lc_level = equip.get("level", "-") if isinstance(equip, dict) else "-"
 
-    # تفاصيل الريليكس (Relics)
     relics = char_data.get("relics", []) or char_data.get("relicList", [])
 
-    # بناء خلفية البطاقة
     card = Image.new("RGBA", (1100, 750), (18, 20, 28, 255))
     draw = ImageDraw.Draw(card)
 
-    # إطار رئيسي وخلفية الأقسام
     draw.rectangle([10, 10, 1090, 740], outline=(65, 80, 110, 255), width=2)
-    
-    # قسم الشخصية والسلاح (اليسار)
     draw.rectangle([20, 20, 420, 730], fill=(24, 28, 38, 255), outline=(45, 60, 85, 255))
 
     if icon_path:
@@ -85,17 +80,14 @@ async def create_character_card(client, char_data):
     except Exception:
         font_title = font_sub = font_bold = font_small = ImageFont.load_default()
 
-    # اسم الشخصية والمستوى
     draw.text((40, 305), char_name.upper(), font=font_title, fill=(255, 215, 100, 255))
     draw.text((40, 335), f"Level: {char_level} / 80", font=font_sub, fill=(200, 210, 230, 255))
 
-    # معلومات السلاح
     draw.rectangle([35, 370, 405, 470], fill=(20, 24, 34, 255), outline=(50, 70, 95, 255))
     draw.text((50, 380), "LIGHT CONE", font=font_bold, fill=(100, 180, 255, 255))
     draw.text((50, 405), f"{lc_name[:32]}", font=font_bold, fill=(255, 255, 255, 255))
     draw.text((50, 435), f"Lvl: {lc_level} / 80", font=font_small, fill=(150, 220, 150, 255))
 
-    # قسم الريليكس والسبستاتس (اليمين)
     draw.rectangle([440, 20, 1070, 730], fill=(20, 24, 34, 255), outline=(45, 60, 85, 255))
     draw.text((460, 35), "EQUIPPED RELICS & STATS", font=font_title, fill=(255, 165, 80, 255))
 
@@ -108,10 +100,8 @@ async def create_character_card(client, char_data):
             
             is_planar = (idx in [5, 6])
             
-            # صندوق لكل قطعة ريليكس
             draw.rectangle([455, y_offset, 1055, y_offset + 95], fill=(26, 31, 43, 255), outline=(55, 75, 100, 255))
             
-            # جلب أيقونة القطعة الرسمية
             if r_icon:
                 r_img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{r_icon}"
                 r_img = await fetch_image(client, r_img_url)
@@ -119,11 +109,9 @@ async def create_character_card(client, char_data):
                     r_img = r_img.resize((70, 70))
                     card.paste(r_img, (470, y_offset + 12), r_img)
 
-            # اسم القطعة والمستوى
             draw.text((550, y_offset + 10), f"{r_name[:32]}", font=font_bold, fill=(230, 235, 245, 255))
             draw.text((980, y_offset + 10), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
 
-            # استخراج الماين ستات
             main_stat = r.get("main_affix", {}) or r.get("mainstat", {})
             m_name = main_stat.get("name", "") or main_stat.get("type", "") or main_stat.get("field", "")
             m_val = main_stat.get("value", "")
@@ -132,7 +120,6 @@ async def create_character_card(client, char_data):
                 clean_m_val = format_stat_value(m_name, m_val, is_planar=is_planar)
                 draw.text((550, y_offset + 30), f"Main: {m_name} ({clean_m_val})", font=font_small, fill=(255, 215, 100, 255))
 
-            # استخراج الـ Substats بالشكل الصحيح
             substats = r.get("sub_affix_list", []) or r.get("substats", []) or r.get("sub_stats", [])
             sub_text = ""
             
@@ -163,7 +150,6 @@ async def create_character_card(client, char_data):
     buf.seek(0)
     return buf
 
-# --- أمر البداية ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "👋 **أهلاً بك يا بشار!**\n\n"
@@ -172,7 +158,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
-# --- أمر فحص الحساب ---
 async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ يرجى كتابة الـ UID بعد الأمر!\nمثال: `/hsr 701021140`", parse_mode='Markdown')
@@ -214,7 +199,6 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             await update.message.reply_text("❌ حدث خطأ في الاتصال بالسيرفر.")
 
-# --- المعالج عند ضغط زر الشخصية ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -237,11 +221,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     
                     if char_idx < len(avatars):
                         char_data = avatars[char_idx]
-                        
-                        # توليد الكارت الدقيق
                         card_buf = await create_character_card(client, char_data)
-                        
-                        # إرسال الصورة صافية وبدون أي نص تحتها
                         await query.message.reply_photo(photo=card_buf)
                         return
 
@@ -258,5 +238,5 @@ def main():
     print("🚀 البوت يعمل بنجاح!")
     app.run_polling(drop_pending_updates=True)
 
-if __name__ == "main":
+if __name__ == "__main__":
     main()
