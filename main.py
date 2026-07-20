@@ -33,6 +33,19 @@ async def fetch_image(client, url):
         pass
     return None
 
+# --- دالة لتنسيق الأرقام والنسب بشكل صحيح (بدون فواصل مزعجة وعلاج 0.54) ---
+def format_stat_value(name, val):
+    try:
+        f_val = float(val)
+        # إذا كانت القيمة نسبية وصغيرة (مثل 0.54 للكريت أو الأتّك نسبي) نحولها لنسبة مئوية صحيحة
+        if any(k in name.lower() for k in ["rate", "dmg", "chance", "percent", "boost", "HP%", "ATK%", "DEF%"]) and f_val < 3.0:
+            f_val = f_val * 100
+        
+        # إذا كانت تحتوي على كسور شبيهة بـ .0 أو ما بيحتاجها المستخدم، نقربها لرقم صحيح نظيف
+        return str(int(round(f_val)))
+    except Exception:
+        return str(val)
+
 # --- دالة رسم بطاقة الشخصية الشاملة والدقيقة ---
 async def create_character_card(client, char_data):
     char_name = char_data.get("name", "Character")
@@ -108,7 +121,7 @@ async def create_character_card(client, char_data):
             draw.text((550, y_offset + 10), f"{r_name[:32]}", font=font_bold, fill=(230, 235, 245, 255))
             draw.text((980, y_offset + 10), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
 
-            # استخراج الماين ستات (Main Stat)
+            # استخراج الماين ستات (Main Stat) مع التنسيق النظيف
             main_stat = r.get("main_affix", {})
             m_name = main_stat.get("name", "")
             m_val = main_stat.get("value", "")
@@ -116,16 +129,18 @@ async def create_character_card(client, char_data):
                 m_name = main_stat.get("type", "Main")
             
             if m_name:
-                draw.text((550, y_offset + 30), f"Main: {m_name} ({m_val})", font=font_small, fill=(255, 215, 100, 255))
+                clean_m_val = format_stat_value(m_name, m_val)
+                draw.text((550, y_offset + 30), f"Main: {m_name} ({clean_m_val})", font=font_small, fill=(255, 215, 100, 255))
 
-            # استخراج الـ Substats بدقة
+            # استخراج الـ Substats وتنسيق أرقامها بدون فواصل عشوائية
             substats = r.get("sub_affix_list", []) or r.get("substats", [])
             sub_text = ""
             for sub in substats:
                 s_name = sub.get("name", "")
                 s_val = sub.get("value", "")
-                if s_name and s_val:
-                    sub_text += f"{s_name}: {s_val}  "
+                if s_name and s_val is not None:
+                    clean_s_val = format_stat_value(s_name, s_val)
+                    sub_text += f"{s_name[:5]}: {clean_s_val}  "
             
             if not sub_text:
                 sub_text = "No Substats recorded"
