@@ -109,17 +109,15 @@ async def create_character_card(client, char_data, player_data):
     draw.text((50, 570), f"Trailblaze Level: {p_level}", font=font_small, fill=(200, 210, 230, 255))
     draw.text((50, 590), f"Equilibrium Level: {p_eq}", font=font_small, fill=(200, 210, 230, 255))
 
-    # --- القسم الأيمن (التحدي الجديد) ---
+    # --- القسم الأيمن ---
     draw.rectangle([440, 20, 1070, 730], fill=(20, 24, 34, 255), outline=(45, 60, 85, 255))
     draw.text((460, 35), "EQUIPPED RELICS & STATS", font=font_title, fill=(255, 165, 80, 255))
 
-    # 1. نظام الشبكة (Grid) للريليكس - 3 صفوف x 2 عمود
     if relics:
         for idx, r in enumerate(relics[:6]):
             col = idx % 2
             row = idx // 2
             
-            # حساب الإحداثيات لكل مربع
             box_x1 = 455 + (col * 305)
             box_y1 = 75 + (row * 125)
             box_x2 = box_x1 + 295
@@ -131,7 +129,6 @@ async def create_character_card(client, char_data, player_data):
             
             draw.rectangle([box_x1, box_y1, box_x2, box_y2], fill=(26, 31, 43, 255), outline=(55, 75, 100, 255))
             
-            # تصغير أيقونة الريليك
             if r_icon:
                 r_img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{r_icon}"
                 r_img = await fetch_image(client, r_img_url)
@@ -152,7 +149,6 @@ async def create_character_card(client, char_data, player_data):
             if m_name:
                 draw.text((box_x1 + 75, box_y1 + 30), f"Main: {m_name} ({m_display})", font=font_small, fill=(255, 215, 100, 255))
 
-            # ترتيب السبستاتس المصغرة (2x2) داخل كل مربع
             substats = r.get("sub_affix", []) or r.get("sub_affix_list", []) or r.get("substats", [])
             
             for i, sub in enumerate(substats[:4]): 
@@ -176,7 +172,6 @@ async def create_character_card(client, char_data, player_data):
     else:
         draw.text((470, 120), "No Relics Equipped", font=font_sub, fill=(170, 170, 170, 255))
 
-    # 2. مربع تأثيرات الأطقم (Set Effects) في الأسفل
     effects_y = 455
     draw.rectangle([455, effects_y, 1055, 715], fill=(22, 27, 37, 255), outline=(50, 70, 95, 255))
     draw.text((470, effects_y + 10), "ACTIVE SET EFFECTS", font=font_title, fill=(255, 165, 80, 255))
@@ -189,13 +184,11 @@ async def create_character_card(client, char_data, player_data):
         s_num = r_set.get("num", 2)
         raw_desc = r_set.get("desc", "")
         
-        # تنظيف كود HTML من وصف تأثير الطقم
         clean_desc = re.sub(r'<[^>]+>', '', str(raw_desc)).replace("\n", " ")
         
         draw.text((470, set_y), f"[{s_num}-Pc] {s_name}", font=font_bold, fill=(100, 230, 150, 255))
         set_y += 20
         
-        # نظام طي النص (Word Wrap) عشان ما يطلع برة المربع
         words = clean_desc.split(" ")
         line = ""
         for word in words:
@@ -216,7 +209,7 @@ async def create_character_card(client, char_data, player_data):
             draw.text((470, set_y), line, font=font_small, fill=(200, 210, 230, 255))
             set_y += 20
             
-        if set_y > 685:  # حماية عشان النص ما يتعدى حدود البطاقة
+        if set_y > 685:
             break
 
     buf = BytesIO()
@@ -259,13 +252,20 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             keyboard = []
+            row = []
             for idx, char in enumerate(avatars):
                 char_name = char.get("name", f"شخصية #{idx + 1}")
-                keyboard.append([InlineKeyboardButton(f"⚔️ {char_name}", callback_data=f"hsr_{uid}_{idx}")])
+                # إضافة الأزرار بدون إيموجي ووضع 4 أزرار في كل صف
+                row.append(InlineKeyboardButton(char_name, callback_data=f"hsr_{uid}_{idx}"))
+                if len(row) == 4:
+                    keyboard.append(row)
+                    row = []
+            if row:
+                keyboard.append(row)
 
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(
-                f"👤 **اللاعب:** {nickname}\n👇 **اختر الشخصية لتوليد البطاقة المفصلة:**", 
+                f"👤 **اللاعب:** {nickname}\n👇 **اختر الشخصية:**", 
                 reply_markup=reply_markup, 
                 parse_mode='Markdown'
             )
