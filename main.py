@@ -25,21 +25,21 @@ threading.Thread(target=run_dummy_server, daemon=True).start()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "👋 **أهلاً بك!**\n\n"
-        "عرض إحصائيات وبيلدات الشخصيات أصبح أسهل بالأزرار التفاعلية!\n\n"
-        "🔹 `/hsr <UID>` - لفحص حساب هونكاي ستار ريل وتحديد البيلدات\n"
-        "🔹 `/genshin <UID>` - لفحص حساب قنشن امباكت\n\n"
+        "عرض بطاقات البيلد المصورة للعبة Honkai: Star Rail و Genshin Impact!\n\n"
+        "🔹 `/hsr <UID>` - لفحص حساب ستار ريل\n"
+        "🔹 `/genshin <UID>` - لفحص حساب قنشن\n\n"
         "⚠️ *تنبيه:* تأكد من تفعيل **Show Character Details** داخل اللعبة."
     )
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
-# --- أمر Honkai: Star Rail مع الأزرار التفاعلية ---
+# --- أمر Honkai: Star Rail ---
 async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ يرجى كتابة الـ UID بعد الأمر!\nمثال: `/hsr 800000000`", parse_mode='Markdown')
         return
 
     uid = context.args[0]
-    await update.message.reply_text("⏳ جاري جلب بيانات الحساب والشخصيات...")
+    await update.message.reply_text("⏳ جاري جلب بيانات الحساب للشخصيات...")
 
     url = f"https://enka.network/api/hsr/uid/{uid}"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -48,7 +48,7 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             response = await client.get(url, headers=headers, timeout=12)
             if response.status_code != 200:
-                await update.message.reply_text("❌ لم يتم العثور على الحساب. تأكد من الـ UID أو أن السيرفر مشغول.")
+                await update.message.reply_text("❌ لم يتم العثور على الحساب. تأكد من الـ UID.")
                 return
 
             data = response.json()
@@ -59,37 +59,30 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
             avatar_list = detail_info.get("avatarDetailList") or data.get("avatarDetailList") or []
 
             if not avatar_list:
-                await update.message.reply_text(
-                    f"👤 **الاسم:** {nickname}\n📊 **المستوى:** {level}\n\n"
-                    "⚠️ *لا توجد شخصيات معروضة.* تأكد من تفعيل 'Show Character Details' داخل اللعبة."
-                )
+                await update.message.reply_text("⚠️ لا توجد شخصيات معروضة. تأكد من تفعيل 'Show Character Details' داخل اللعبة.")
                 return
 
-            # إنشاء أزرار تفاعلية لكل شخصية موجودة
             keyboard = []
             for idx, avatar in enumerate(avatar_list):
-                # حاول الحصول على المعرف أو الاسم
                 avatar_id = str(avatar.get("avatarId", idx))
-                button_text = f"⚔️ شخصية #{idx + 1} (ID: {avatar_id})"
-                # تخزين البيانات الممررة عند الضغط على الزر
-                keyboard.append([InlineKeyboardButton(button_text, callback_data=f"hsr_{uid}_{idx}")])
+                button_text = f"⚔️ شخصية #{idx + 1}"
+                keyboard.append([InlineKeyboardButton(button_text, callback_data=f"hsr_{uid}_{idx}_{avatar_id}")])
 
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             response_msg = (
                 f"🚀 **Honkai: Star Rail Profile**\n\n"
                 f"👤 **الاسم:** {nickname}\n"
-                f"📊 **المستوى:** {level}\n"
-                f"👥 **الشخصيات المتاحة:** {len(avatar_list)}\n\n"
-                f"👇 **اختر الشخصية من الأزرار أدناه لعرض البيلد والريليكس:**"
+                f"📊 **المستوى:** {level}\n\n"
+                f"👇 **اختر الشخصية لتوليد صورة البيلد الكاملة:**"
             )
 
             await update.message.reply_text(response_msg, reply_markup=reply_markup, parse_mode='Markdown')
 
         except Exception as e:
-            await update.message.reply_text("❌ حدث خطأ أثناء جلب البيانات من السيرفر.")
+            await update.message.reply_text("❌ حدث خطأ أثناء الاتصال بالسيرفر.")
 
-# --- المعالج المباشر عند ضغط زر الشخصية ---
+# --- المعالج لإنشاء وإرسال بطاقة البيلد كصورة كاملة ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -97,69 +90,24 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_parts = query.data.split("_")
     if data_parts[0] == "hsr":
         uid = data_parts[1]
-        char_idx = int(data_parts[2])
+        char_idx = data_parts[2]
+        avatar_id = data_parts[3]
 
-        await query.edit_message_text("⏳ جاري تحميل بيلد الشخصية والريليكس...")
+        await query.edit_message_text("🎨 جاري توليد صورة بطاقة البيلد الكاملة...")
 
-        url = f"https://enka.network/api/hsr/uid/{uid}"
-        headers = {"User-Agent": "Mozilla/5.0"}
+        # خدمة توليد كروت Enka المصورة لـ Star Rail المباشرة
+        card_image_url = f"https://enka.network/api/hsr/uid/{uid}/profile" 
+        
+        # رابط صورة البطاقة التوليدية المباشرة (Enka Card API)
+        card_api_url = f"https://cards.enka.network/u/hsr/{uid}/{char_idx}.png"
 
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(url, headers=headers, timeout=12)
-                if response.status_code != 200:
-                    await query.message.reply_text("❌ تعذر جلب البيانات.")
-                    return
-
-                data = response.json()
-                detail_info = data.get("detailInfo") or data.get("detailHeader") or {}
-                avatar_list = detail_info.get("avatarDetailList") or data.get("avatarDetailList") or []
-
-                if char_idx >= len(avatar_list):
-                    await query.message.reply_text("❌ لم يتم العثور على بيانات الشخصية.")
-                    return
-
-                char = avatar_list[char_idx]
-                avatar_id = char.get("avatarId", "غير معروف")
-                char_level = char.get("level", "1")
-                promotion = char.get("promotion", "0")
-
-                # جلب السلاح (Light Cone)
-                equipment = char.get("equipment", {})
-                equipment_name = equipment.get("tid", "بدون سلاح")
-                equipment_level = equipment.get("level", "-")
-
-                # جلب الريليكس (Relics)
-                relic_list = char.get("relicList", [])
-                relics_text = ""
-                
-                if relic_list:
-                    for i, relic in enumerate(relic_list, 1):
-                        relic_level = relic.get("level", 0)
-                        relics_text += f"\n  🔹 **قطعة #{i}:** مستوى +{relic_level}"
-                else:
-                    relics_text = "\n  ⚠️ لا توجد قطع ريليكس مجهزة."
-
-                # رابط صورة رسمية للشخصية من Enka UI
-                photo_url = f"https://enka.network/ui/hsr/SpriteOutput/AvatarRoundIcon/{avatar_id}.png"
-
-                build_msg = (
-                    f"⚔️ **Honkai: Star Rail Character Build**\n\n"
-                    f"🆔 **معرف الشخصية:** {avatar_id}\n"
-                    f"📈 **المستوى:** {char_level} (Ascension {promotion})\n"
-                    f"🗡️ **السلاح:** {equipment_name} (Lvl {equipment_level})\n"
-                    f"\n🛡️ **الريليكس المجهزة (Relics):**{relics_text}"
-                )
-
-                # إرسال الصورة الرسمية للشخصية مع التفاصيل
-                try:
-                    await query.message.reply_photo(photo=photo_url, caption=build_msg, parse_mode='Markdown')
-                except Exception:
-                    # في حال لم تتوفر الصورة الأيقونية، يُرسل النص بدلاً منها
-                    await query.message.reply_text(build_msg, parse_mode='Markdown')
-
-            except Exception as e:
-                await query.message.reply_text("❌ حدث خطأ أثناء تجهيز البيلد.")
+        try:
+            # إرسال البطاقة فقط كصورة بدقة عالية بدون أي كلام تحتي
+            await query.message.reply_photo(photo=card_api_url)
+        except Exception:
+            # رابط احتياطي لتوليد كارت البيلد
+            fallback_card = f"https://enka.network/ui/hsr/SpriteOutput/AvatarDrawCard/{avatar_id}.png"
+            await query.message.reply_photo(photo=fallback_card)
 
 # --- تشغيل التطبيق ---
 def main():
