@@ -1,6 +1,9 @@
+import os
 import asyncio
 import nest_asyncio
 import httpx
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -8,6 +11,22 @@ nest_asyncio.apply()
 
 BOT_TOKEN = "8975704106:AAEQGsSOQWGmqx_TUId8pLv9oA9xnYo9kCo"
 
+# --- سيرفر وهمي لإبقاء الخطة المجانية شغال على Render ---
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is Running Live!")
+
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
+    server.serve_forever()
+
+# تشغيل السيرفر الوهمي في Thread خلفي
+threading.Thread(target=run_dummy_server, daemon=True).start()
+
+# --- أوامر البوت ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "👋 **أهلاً بك!**\n\n"
@@ -104,6 +123,7 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text("❌ حدث خطأ أثناء الاتصال بالسيرفر.")
 
+# --- تشغيل التطبيق ---
 async def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
