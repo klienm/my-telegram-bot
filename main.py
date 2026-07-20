@@ -84,7 +84,7 @@ async def create_character_card(client, char_data):
 
     # قسم الريليكس والسبستاتس (اليمين)
     draw.rectangle([440, 20, 1070, 730], fill=(20, 24, 34, 255), outline=(45, 60, 85, 255))
-    draw.text((460, 35), "EQUIPPED RELICS & SUBSTATS", font=font_title, fill=(255, 165, 80, 255))
+    draw.text((460, 35), "EQUIPPED RELICS & STATS", font=font_title, fill=(255, 165, 80, 255))
 
     y_offset = 75
     if relics:
@@ -105,27 +105,32 @@ async def create_character_card(client, char_data):
                     card.paste(r_img, (470, y_offset + 12), r_img)
 
             # اسم القطعة والمستوى
-            draw.text((550, y_offset + 12), f"{r_name[:35]}", font=font_bold, fill=(230, 235, 245, 255))
-            draw.text((980, y_offset + 12), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
+            draw.text((550, y_offset + 10), f"{r_name[:32]}", font=font_bold, fill=(230, 235, 245, 255))
+            draw.text((980, y_offset + 10), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
 
-            # استخراج Substats بكل المسارات المحتملة للـ API
-            substats = r.get("substats", []) or r.get("sub_affix_list", []) or []
+            # استخراج الماين ستات (Main Stat)
+            main_stat = r.get("main_affix", {})
+            m_name = main_stat.get("name", "")
+            m_val = main_stat.get("value", "")
+            if not m_name:
+                m_name = main_stat.get("type", "Main")
+            
+            if m_name:
+                draw.text((550, y_offset + 30), f"Main: {m_name} ({m_val})", font=font_small, fill=(255, 215, 100, 255))
+
+            # استخراج الـ Substats بدقة
+            substats = r.get("sub_affix_list", []) or r.get("substats", [])
             sub_text = ""
             for sub in substats:
-                s_name = sub.get("name") or sub.get("field", "")
-                s_val = sub.get("value") or sub.get("display_value", "")
-                if not s_name:
-                    item_type = sub.get("type", "")
-                    s_val = sub.get("value", "")
-                    s_name = item_type[:4]
-                
+                s_name = sub.get("name", "")
+                s_val = sub.get("value", "")
                 if s_name and s_val:
-                    sub_text += f"{s_name[:6]}: {s_val}  "
+                    sub_text += f"{s_name}: {s_val}  "
             
             if not sub_text:
-                sub_text = "Main Stat / Stats active"
+                sub_text = "No Substats recorded"
                 
-            draw.text((550, y_offset + 45), sub_text[:85], font=font_small, fill=(170, 185, 205, 255))
+            draw.text((550, y_offset + 55), sub_text[:85], font=font_small, fill=(170, 185, 205, 255))
             
             y_offset += 105
     else:
