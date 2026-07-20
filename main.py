@@ -227,11 +227,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❌ يرجى كتابة الـ UID بعد الأمر!\nمثال: `/hsr 701021140`", parse_mode='Markdown')
+        await update.message.reply_text("❌ يرجى كتابة الـ UID بعد الأمر!\nمثال: `/hsr 701021140`", parse_mode='Markdown', reply_to_message_id=update.message.message_id)
         return
 
     uid = context.args[0]
-    await update.message.reply_text("⏳ جاري جلب بيانات الحساب...")
+    await update.message.reply_text("⏳ جاري جلب بيانات الحساب...", reply_to_message_id=update.message.message_id)
 
     url = f"https://api.mihomo.me/sr_info_parsed/{uid}?lang=en"
 
@@ -239,7 +239,7 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             response = await client.get(url, timeout=15)
             if response.status_code != 200:
-                await update.message.reply_text("❌ لم يتم العثور على الحساب. تأكد من صحة الـ UID.")
+                await update.message.reply_text("❌ لم يتم العثور على الحساب. تأكد من صحة الـ UID.", reply_to_message_id=update.message.message_id)
                 return
 
             data = response.json()
@@ -248,7 +248,7 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
             avatars = data.get("characters", []) or data.get("avatar_list", [])
 
             if not avatars:
-                await update.message.reply_text("⚠️ لا توجد شخصيات معروضة في هذا الحساب.")
+                await update.message.reply_text("⚠️ لا توجد شخصيات معروضة في هذا الحساب.", reply_to_message_id=update.message.message_id)
                 return
 
             keyboard = []
@@ -263,24 +263,32 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 keyboard.append(row)
 
             reply_markup = InlineKeyboardMarkup(keyboard)
+            # الرد مباشرة على الشخص الذي أرسل أمر الـ hsr
             await update.message.reply_text(
                 f"👤 **اللاعب:** {nickname}\n👇 **اختر الشخصية:**", 
                 reply_markup=reply_markup, 
-                parse_mode='Markdown'
+                parse_mode='Markdown',
+                reply_to_message_id=update.message.message_id
             )
 
         except Exception:
-            await update.message.reply_text("❌ حدث خطأ في الاتصال بالسيرفر.")
+            await update.message.reply_text("❌ حدث خطأ في الاتصال بالسيرفر.", reply_to_message_id=update.message.message_id)
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    # إجبار التليجرام على إيقاف علامة التحميل الدائرية بدون إرسال أي نص مزعج
     await query.answer()
 
     data_parts = query.data.split("_")
     if data_parts[0] == "hsr":
         uid = data_parts[1]
         char_idx = int(data_parts[2])
+
+        # العثور على الرسالة الأصلية التي تحتوي على الأزرار (والتي تمثل رد الشخص على البيلد أو طلبه)
+        target_message_id = query.message.message_id
+        
+        # إذا كانت رسالة الأزرار نفسها رداً على شخص آخر، سيتم استهداف الرسالة الأصلية أو رسالة الشخص الذي طلب الأزرار
+        if query.message.reply_to_message:
+            target_message_id = query.message.reply_to_message.message_id
 
         url = f"https://api.mihomo.me/sr_info_parsed/{uid}?lang=en"
 
@@ -295,14 +303,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if char_idx < len(avatars):
                         char_data = avatars[char_idx]
                         card_buf = await create_character_card(client, char_data, player_data)
-                        # إرسال الصورة كـ Reply (رد) على رسالة الأزرار الأصلية للمستخدم مع Mention تلقائي
-                        await query.message.reply_photo(photo=card_buf, reply_to_message_id=query.message.message_id)
+                        
+                        # إرسال الصورة كـ Reply (رد مع منشن) على الشخص الذي طلب الأزرار/البيلد
+                        await query.message.reply_photo(
+                            photo=card_buf, 
+                            reply_to_message_id=target_message_id
+                        )
                         return
 
-                await query.message.reply_text("❌ تعذر إنشاء البطاقة.")
+                await query.message.reply_text("❌ تعذر إنشاء البطاقة.", reply_to_message_id=target_message_id)
             except Exception as e:
                 print(f"Error generating card: {e}")
-                await query.message.reply_text("❌ حدث خطأ أثناء تجهيز الصورة.")
+                await query.message.reply_text("❌ حدث خطأ أثناء تجهيز الصورة.", reply_to_message_id=target_message_id)
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
