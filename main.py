@@ -33,12 +33,17 @@ async def fetch_image(client, url):
         pass
     return None
 
-# --- دالة لتنسيق الأرقام والنسب بشكل دقيق ونظيف ---
-def format_stat_value(name, val):
+# --- دالة لتنسيق الأرقام والنسب بشكل دقيق ونظيف (مع معالجة الكرة والحبل) ---
+def format_stat_value(name, val, is_planar=False):
     try:
         f_val = float(val)
-        if any(k in name.lower() for k in ["rate", "dmg", "chance", "percent", "boost", "HP%", "ATK%", "DEF%"]) and f_val < 3.0:
+        
+        # إذا كانت القطعة كرة أو حبل (Planar) وقيمتها تظهر ككسر صغير (مثل 0.54 أو 0.43)، نضربها بـ 100 لتصبح 54 و 43
+        if is_planar and f_val < 5.0:
             f_val = f_val * 100
+        elif any(k in name.lower() for k in ["rate", "dmg", "chance", "percent", "boost", "HP%", "ATK%", "DEF%"]) and f_val < 3.0:
+            f_val = f_val * 100
+            
         return str(int(round(f_val)))
     except Exception:
         return str(val)
@@ -103,6 +108,9 @@ async def create_character_card(client, char_data):
             r_lvl = r.get("level", 0)
             r_icon = r.get("icon", "")
             
+            # تحديد ما إذا كانت القطعة الحالية هي الكرة (القطعة 5) أو الحبل (القطعة 6)
+            is_planar = (idx in [5, 6])
+            
             # صندوق لكل قطعة ريليكس
             draw.rectangle([455, y_offset, 1055, y_offset + 95], fill=(26, 31, 43, 255), outline=(55, 75, 100, 255))
             
@@ -118,16 +126,15 @@ async def create_character_card(client, char_data):
             draw.text((550, y_offset + 10), f"{r_name[:32]}", font=font_bold, fill=(230, 235, 245, 255))
             draw.text((980, y_offset + 10), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
 
-            # استخراج الماين ستات مع دعم display_value الخاص بالكرة والحبل لضمان ظهور القيمة الصحيحة (مثل 54 و 43)
+            # استخراج الماين ستات مع تمرير علامة الـ is_planar لضمان تصحيح الكرة (54) والحبل (43)
             main_stat = r.get("main_affix", {})
             m_name = main_stat.get("name", "")
-            m_val = main_stat.get("display_value") or main_stat.get("value", "")
+            m_val = main_stat.get("value", "")
             if not m_name:
                 m_name = main_stat.get("type", "Main")
             
             if m_name:
-                # إذا كانت display_value موجودة وجاهزة نستخدمها مباشرة، وإلا ننظف القيمة
-                clean_m_val = str(m_val) if "display_value" in main_stat else format_stat_value(m_name, m_val)
+                clean_m_val = format_stat_value(m_name, m_val, is_planar=is_planar)
                 draw.text((550, y_offset + 30), f"Main: {m_name} ({clean_m_val})", font=font_small, fill=(255, 215, 100, 255))
 
             # استخراج الـ Substats
@@ -135,9 +142,9 @@ async def create_character_card(client, char_data):
             sub_text = ""
             for sub in substats:
                 s_name = sub.get("name", "")
-                s_val = sub.get("display_value") or sub.get("value", "")
+                s_val = sub.get("value", "")
                 if s_name and s_val is not None:
-                    clean_s_val = str(s_val) if "display_value" in sub else format_stat_value(s_name, s_val)
+                    clean_s_val = format_stat_value(s_name, s_val, is_planar=False)
                     sub_text += f"{s_name[:5]}: {clean_s_val}  "
             
             if not sub_text:
