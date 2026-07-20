@@ -39,7 +39,7 @@ def format_stat_value(name, val, is_planar=False):
         f_val = float(val)
         if is_planar and f_val < 5.0:
             f_val = f_val * 100
-        elif any(k in name.lower() for k in ["rate", "dmg", "chance", "percent", "boost", "HP%", "ATK%", "DEF%"]) and f_val < 3.0:
+        elif any(k in str(name).lower() for k in ["rate", "dmg", "chance", "percent", "boost", "hp_", "atk_", "def_", "%"]) and f_val < 3.0:
             f_val = f_val * 100
         return str(int(round(f_val)))
     except Exception:
@@ -124,28 +124,31 @@ async def create_character_card(client, char_data):
 
             # استخراج الماين ستات
             main_stat = r.get("main_affix", {}) or r.get("mainstat", {})
-            m_name = main_stat.get("name", "") or main_stat.get("type", "")
+            m_name = main_stat.get("name", "") or main_stat.get("type", "") or main_stat.get("field", "")
             m_val = main_stat.get("value", "")
             
             if m_name:
                 clean_m_val = format_stat_value(m_name, m_val, is_planar=is_planar)
                 draw.text((550, y_offset + 30), f"Main: {m_name} ({clean_m_val})", font=font_small, fill=(255, 215, 100, 255))
 
-            # استخراج الـ Substats بدعم كامل لكل المسميات المحتملة في الـ API
+            # استخراج الـ Substats بالشكل الصحيح من مصفوفة sub_affix_list أو substats
             substats = r.get("sub_affix_list", []) or r.get("substats", []) or r.get("sub_stats", [])
             sub_text = ""
+            
             for sub in substats:
-                s_name = sub.get("name", "") or sub.get("type", "") or sub.get("field", "")
+                # فحص شامل لكل مفتاح ممكن للاسم أو النوع أو الحقل
+                s_name = sub.get("name", "") or sub.get("field", "") or sub.get("type", "")
                 s_val = sub.get("value", "")
                 
-                # أحياناً تكون البيانات مخزنة داخل كائن فرعي اسمه properties أو stat
                 if not s_name and "stat" in sub:
-                    s_name = sub["stat"].get("name", "")
+                    s_name = sub["stat"].get("name", "") or sub["stat"].get("field", "")
                     s_val = sub["stat"].get("value", "")
                 
                 if s_name and s_val is not None:
                     clean_s_val = format_stat_value(s_name, s_val, is_planar=False)
-                    sub_text += f"{s_name[:4]}: {clean_s_val}  "
+                    # اختصار اسم الخاصية قليلاً ليناسب العرض بجانب بعضه
+                    short_name = str(s_name).replace("_", " ")[:6]
+                    sub_text += f"{short_name}: {clean_s_val}  "
             
             if not sub_text:
                 sub_text = "No Substats recorded"
