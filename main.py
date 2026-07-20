@@ -1,17 +1,14 @@
 import os
 import asyncio
-import nest_asyncio
 import httpx
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-nest_asyncio.apply()
-
 BOT_TOKEN = "8975704106:AAEQGsSOQWGmqx_TUId8pLv9oA9xnYo9kCo"
 
-# --- سيرفر وهمي لإبقاء الخطة المجانية شغال على Render ---
+# --- سيرفر وهمي لإبقاء الخطة المجانية شغالة على Render ---
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -123,8 +120,8 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text("❌ حدث خطأ أثناء الاتصال بالسيرفر.")
 
-# --- تشغيل التطبيق ---
-async def main():
+# --- تشغيل التطبيق القياسي ---
+def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -132,7 +129,7 @@ async def main():
     app.add_handler(CommandHandler("hsr", hsr_check))
 
     print("🚀 البوت يعمل الآن بنجاح!")
-    await app.run_polling(stop_signals=None)
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
