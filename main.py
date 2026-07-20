@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-BOT_TOKEN = "8975704106:AAFZQq6zBx6cSYYR2nnEB6o4N2VvgbiAI20"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # --- سيرفر HTTP أساسي لضمان استجابة Render ---
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
