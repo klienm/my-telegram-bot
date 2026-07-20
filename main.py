@@ -63,7 +63,7 @@ async def create_character_card(client, char_data, player_data):
 
     draw.rectangle([10, 10, 1090, 740], outline=(65, 80, 110, 255), width=2)
     
-    # --- القسم الأيسر (لم يتم تعديله) ---
+    # --- القسم الأيسر ---
     draw.rectangle([20, 20, 420, 730], fill=(24, 28, 38, 255), outline=(45, 60, 85, 255))
 
     if icon_path:
@@ -255,7 +255,6 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
             row = []
             for idx, char in enumerate(avatars):
                 char_name = char.get("name", f"شخصية #{idx + 1}")
-                # إضافة الأزرار بدون إيموجي ووضع 4 أزرار في كل صف
                 row.append(InlineKeyboardButton(char_name, callback_data=f"hsr_{uid}_{idx}"))
                 if len(row) == 4:
                     keyboard.append(row)
@@ -275,14 +274,13 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    # إجبار التليجرام على إيقاف علامة التحميل الدائرية بدون إرسال أي نص مزعج
     await query.answer()
 
     data_parts = query.data.split("_")
     if data_parts[0] == "hsr":
         uid = data_parts[1]
         char_idx = int(data_parts[2])
-
-        await query.edit_message_text("🎨 جاري رسم بطاقة البيلد المفصلة بالقطع والسبستاتس...")
 
         url = f"https://api.mihomo.me/sr_info_parsed/{uid}?lang=en"
 
@@ -297,7 +295,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if char_idx < len(avatars):
                         char_data = avatars[char_idx]
                         card_buf = await create_character_card(client, char_data, player_data)
-                        await query.message.reply_photo(photo=card_buf)
+                        # إرسال الصورة كـ Reply (رد) على رسالة الأزرار الأصلية للمستخدم مع Mention تلقائي
+                        await query.message.reply_photo(photo=card_buf, reply_to_message_id=query.message.message_id)
                         return
 
                 await query.message.reply_text("❌ تعذر إنشاء البطاقة.")
