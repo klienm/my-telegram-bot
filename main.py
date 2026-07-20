@@ -40,7 +40,6 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = context.args[0]
     await update.message.reply_text("⏳ جاري جلب بيانات الحساب والشخصيات...")
 
-    # استخدام Mihomo API لجلب بيانات ستار ريل بدقة
     url = f"https://api.mihomo.me/sr_info_parsed/{uid}?lang=en"
 
     async with httpx.AsyncClient() as client:
@@ -85,7 +84,7 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text("❌ حدث خطأ أثناء جلب البيانات من السيرفر.")
 
-# --- المعالج عند ضغط زر الشخصية (يرسل صورة البطاقة فقط) ---
+# --- المعالج عند ضغط زر الشخصية (يولّد و يرسل بطاقة البيلد الكاملة كصورة) ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -95,38 +94,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid = data_parts[1]
         char_idx = int(data_parts[2])
 
-        await query.edit_message_text("🎨 جاري سحب صورة بطاقة البيلد...")
+        await query.edit_message_text("🎨 جاري توليد صورة بطاقة البيلد الكاملة...")
 
-        # استخدام خدمة توليد كروت Mihomo/Enka المباشرة
-        card_generator_url = f"https://api.mihomo.me/sr_info_parsed/{uid}?lang=en"
+        # رابط خدمة مولّد بطاقات البيلد لـ Star Rail المباشر (Card Render API)
+        card_url = f"https://cards.enka.network/u/hsr/{uid}/{char_idx}.png"
 
         async with httpx.AsyncClient() as client:
             try:
-                res = await client.get(card_generator_url, timeout=12)
+                # التأكد من جاهزية الصورة
+                res = await client.get(card_url, timeout=15)
                 if res.status_code == 200:
-                    data = res.json()
-                    avatars = data.get("characters", []) or data.get("avatar_list", [])
-                    
-                    if char_idx < len(avatars):
-                        char_data = avatars[char_idx]
-                        
-                        # جلب صورة كارت البيلد الجاهز من API أو صورة البيلد المجمعة
-                        # يتم استخدام رابط كارت الشخصية المباشر
-                        char_id = char_data.get("id", "")
-                        
-                        # رابط الصورة الجاهزة للبيلد (Card)
-                        card_img_url = f"https://raw.githubusercontent.com/Mar-Base/Mihomo.me/main/assets/image/character/{char_id}.png"
+                    await query.message.reply_photo(photo=card_url)
+                    return
+                else:
+                    # رابط محرك بديل لجلب بطاقة البيلد الجاهزة
+                    fallback_url = f"https://api.starrail.build/card?uid={uid}&index={char_idx}"
+                    await query.message.reply_photo(photo=fallback_url)
+                    return
 
-                        # إرسال الصورة صافية بدون نص تحتي
-                        try:
-                            await query.message.reply_photo(photo=card_img_url)
-                            return
-                        except Exception:
-                            pass
-
-                await query.message.reply_text("❌ تعذر تحميل صورة الكارت. جرب مرة أخرى.")
-            except Exception as e:
-                await query.message.reply_text("❌ حدث خطأ أثناء تجهيز الصورة.")
+            except Exception:
+                await query.message.reply_text("❌ تعذر جلب بطاقة البيلد حالياً، حاول مجدداً بعد قليل.")
 
 # --- تشغيل البوت ---
 def main():
