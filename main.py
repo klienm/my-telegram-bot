@@ -5,7 +5,7 @@ import threading
 from io import BytesIO
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from enka import EnkaNetwork
+from enka_network import EnkaNetwork
 
 BOT_TOKEN = "8975704106:AAEQGsSOQWGmqx_TUId8pLv9oA9xnYo9kCo"
 
@@ -46,7 +46,6 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ جاري جلب بيانات الحساب والشخصيات...")
 
     try:
-        # جلب البيانات عبر مكتبة Enka الرسمية
         async with enka:
             data = await enka.fetch_hsr(uid)
             
@@ -77,7 +76,7 @@ async def hsr_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text("❌ لم يتم العثور على الحساب أو السيرفر مشغول. تأكد من الـ UID.")
 
-# --- المعالج عند ضغط زر الشخصية (يولّد الكارت الجاهز) ---
+# --- المعالج عند ضغط زر الشخصية ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -95,14 +94,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if data and char_idx < len(data.characters):
                     char = data.characters[char_idx]
                     
-                    # توليد بطاقة البيلد الأصلية باستخدام Enka Card Engine
                     card_image = await char.build_card()
                     
                     buf = BytesIO()
                     card_image.save(buf, format="PNG")
                     buf.seek(0)
 
-                    # إرسال صورة البطاقة الجاهزة بالكامل
                     await query.message.reply_photo(photo=buf)
                     return
 
@@ -118,7 +115,7 @@ def main():
     app.add_handler(CommandHandler("hsr", hsr_check))
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    print("🚀 البوت يعمل بنجاح مع كروت Enka!")
+    print("🚀 البوت يعمل بنجاح!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
