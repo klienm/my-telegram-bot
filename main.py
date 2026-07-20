@@ -46,12 +46,12 @@ def format_stat_value(name, val, is_planar=False):
         return str(val)
 
 # --- دالة رسم بطاقة الشخصية الشاملة والدقيقة ---
-async def create_character_card(client, char_data):
+# أضفنا player_data كمتغير جديد لاستقبال معلومات الحساب
+async def create_character_card(client, char_data, player_data):
     char_name = char_data.get("name", "Character")
     char_level = char_data.get("level", 1)
     icon_path = char_data.get("icon", "")
     
-    # التعديل هنا: استخدام المفتاح الصحيح "light_cone" بدلاً من "equip"
     equip = char_data.get("light_cone", {})
     lc_name = equip.get("name", "None") if isinstance(equip, dict) else "None"
     lc_level = equip.get("level", "-") if isinstance(equip, dict) else "-"
@@ -83,21 +83,35 @@ async def create_character_card(client, char_data):
     draw.text((40, 305), char_name.upper(), font=font_title, fill=(255, 215, 100, 255))
     draw.text((40, 335), f"Level: {char_level} / 80", font=font_sub, fill=(200, 210, 230, 255))
 
+    # قسم السلاح (Light Cone)
     draw.rectangle([35, 370, 405, 470], fill=(20, 24, 34, 255), outline=(50, 70, 95, 255))
     draw.text((50, 380), "LIGHT CONE", font=font_bold, fill=(100, 180, 255, 255))
     draw.text((50, 405), f"{lc_name[:25]}", font=font_bold, fill=(255, 255, 255, 255))
     draw.text((50, 435), f"Lvl: {lc_level} / 80", font=font_small, fill=(150, 220, 150, 255))
 
-    # جلب ووضع صورة السلاح (Light Cone)
     if lc_icon:
         lc_img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{lc_icon}"
         lc_img = await fetch_image(client, lc_img_url)
         if lc_img:
-            # يمكن تعديل الحجم هنا إذا كانت الصورة كبيرة جداً
             lc_img = lc_img.resize((75, 75))
-            # وضع الصورة بوجود طبقة الشفافية (Mask)
             card.paste(lc_img, (315, 385), lc_img)
 
+    # --- القسم الجديد: معلومات الحساب (تحت السلاح) ---
+    draw.rectangle([35, 490, 405, 610], fill=(20, 24, 34, 255), outline=(50, 70, 95, 255))
+    draw.text((50, 500), "PLAYER INFO", font=font_bold, fill=(255, 165, 80, 255))
+    
+    p_name = player_data.get("nickname", "Unknown")
+    p_uid = player_data.get("uid", "-")
+    p_level = player_data.get("level", "-")
+    p_eq = player_data.get("world_level", "-")
+
+    draw.text((50, 525), f"Name: {p_name}", font=font_bold, fill=(255, 255, 255, 255))
+    draw.text((50, 550), f"UID: {p_uid}", font=font_small, fill=(200, 210, 230, 255))
+    draw.text((50, 570), f"Trailblaze Level: {p_level}", font=font_small, fill=(200, 210, 230, 255))
+    draw.text((50, 590), f"Equilibrium Level: {p_eq}", font=font_small, fill=(200, 210, 230, 255))
+    # --------------------------------------------------
+
+    # قسم الريليكس (Relics)
     draw.rectangle([440, 20, 1070, 730], fill=(20, 24, 34, 255), outline=(45, 60, 85, 255))
     draw.text((460, 35), "EQUIPPED RELICS & STATS", font=font_title, fill=(255, 165, 80, 255))
 
@@ -227,11 +241,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 res = await client.get(url, timeout=15)
                 if res.status_code == 200:
                     data = res.json()
+                    # سحب بيانات الحساب (player) من الرد
+                    player_data = data.get("player", {})
                     avatars = data.get("characters", []) or data.get("avatar_list", [])
                     
                     if char_idx < len(avatars):
                         char_data = avatars[char_idx]
-                        card_buf = await create_character_card(client, char_data)
+                        # تمرير بيانات الحساب مع بيانات الشخصية للدالة
+                        card_buf = await create_character_card(client, char_data, player_data)
                         await query.message.reply_photo(photo=card_buf)
                         return
 
