@@ -7,7 +7,8 @@ from PIL import Image, ImageDraw, ImageFont
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-BOT_TOKEN = "8975704106:AAEQGsSOQWGmqx_TUId8pLv9oA9xnYo9kCo"
+# التوكن الجديد الذي قمت بتزويدي به
+BOT_TOKEN = "8975704106:AAFZQq6zBx6cSYYR2nnEB6o4N2VvgbiAI20"
 
 # --- سيرفر وهمي لإبقاء الخدمة تعمل على Render 24/7 ---
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -131,12 +132,11 @@ async def create_character_card(client, char_data):
                 clean_m_val = format_stat_value(m_name, m_val, is_planar=is_planar)
                 draw.text((550, y_offset + 30), f"Main: {m_name} ({clean_m_val})", font=font_small, fill=(255, 215, 100, 255))
 
-            # استخراج الـ Substats بالشكل الصحيح من مصفوفة sub_affix_list أو substats
+            # استخراج الـ Substats بالشكل الصحيح
             substats = r.get("sub_affix_list", []) or r.get("substats", []) or r.get("sub_stats", [])
             sub_text = ""
             
             for sub in substats:
-                # فحص شامل لكل مفتاح ممكن للاسم أو النوع أو الحقل
                 s_name = sub.get("name", "") or sub.get("field", "") or sub.get("type", "")
                 s_val = sub.get("value", "")
                 
@@ -146,7 +146,6 @@ async def create_character_card(client, char_data):
                 
                 if s_name and s_val is not None:
                     clean_s_val = format_stat_value(s_name, s_val, is_planar=False)
-                    # اختصار اسم الخاصية قليلاً ليناسب العرض بجانب بعضه
                     short_name = str(s_name).replace("_", " ")[:6]
                     sub_text += f"{short_name}: {clean_s_val}  "
             
@@ -259,5 +258,5 @@ def main():
     print("🚀 البوت يعمل بنجاح!")
     app.run_polling(drop_pending_updates=True)
 
-if __name__ == "__main__":
+if __name__ == "main":
     main()
