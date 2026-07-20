@@ -1,4 +1,5 @@
 import os
+import re
 import httpx
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
@@ -9,7 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 
 BOT_TOKEN = "8975704106:AAFZQq6zBx6cSYYR2nnEB6o4N2VvgbiAI20"
 
-# --- سيرفر HTTP أساسي لضمان استجابة Render وعدم إغلاق التطبيق ---
+# --- سيرفر HTTP أساسي لضمان استجابة Render ---
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -24,7 +25,6 @@ def run_dummy_server():
 
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
-# --- دالة جلب الصور من الإنترنت بأمان ---
 async def fetch_image(client, url):
     try:
         res = await client.get(url, timeout=5)
@@ -45,8 +45,7 @@ def format_stat_value(name, val, is_planar=False):
     except Exception:
         return str(val)
 
-# --- دالة رسم بطاقة الشخصية الشاملة والدقيقة ---
-# أضفنا player_data كمتغير جديد لاستقبال معلومات الحساب
+# --- دالة رسم بطاقة الشخصية ---
 async def create_character_card(client, char_data, player_data):
     char_name = char_data.get("name", "Character")
     char_level = char_data.get("level", 1)
@@ -63,6 +62,8 @@ async def create_character_card(client, char_data, player_data):
     draw = ImageDraw.Draw(card)
 
     draw.rectangle([10, 10, 1090, 740], outline=(65, 80, 110, 255), width=2)
+    
+    # --- القسم الأيسر (لم يتم تعديله) ---
     draw.rectangle([20, 20, 420, 730], fill=(24, 28, 38, 255), outline=(45, 60, 85, 255))
 
     if icon_path:
@@ -83,7 +84,6 @@ async def create_character_card(client, char_data, player_data):
     draw.text((40, 305), char_name.upper(), font=font_title, fill=(255, 215, 100, 255))
     draw.text((40, 335), f"Level: {char_level} / 80", font=font_sub, fill=(200, 210, 230, 255))
 
-    # قسم السلاح (Light Cone)
     draw.rectangle([35, 370, 405, 470], fill=(20, 24, 34, 255), outline=(50, 70, 95, 255))
     draw.text((50, 380), "LIGHT CONE", font=font_bold, fill=(100, 180, 255, 255))
     draw.text((50, 405), f"{lc_name[:25]}", font=font_bold, fill=(255, 255, 255, 255))
@@ -96,7 +96,6 @@ async def create_character_card(client, char_data, player_data):
             lc_img = lc_img.resize((75, 75))
             card.paste(lc_img, (315, 385), lc_img)
 
-    # --- القسم الجديد: معلومات الحساب (تحت السلاح) ---
     draw.rectangle([35, 490, 405, 610], fill=(20, 24, 34, 255), outline=(50, 70, 95, 255))
     draw.text((50, 500), "PLAYER INFO", font=font_bold, fill=(255, 165, 80, 255))
     
@@ -109,41 +108,51 @@ async def create_character_card(client, char_data, player_data):
     draw.text((50, 550), f"UID: {p_uid}", font=font_small, fill=(200, 210, 230, 255))
     draw.text((50, 570), f"Trailblaze Level: {p_level}", font=font_small, fill=(200, 210, 230, 255))
     draw.text((50, 590), f"Equilibrium Level: {p_eq}", font=font_small, fill=(200, 210, 230, 255))
-    # --------------------------------------------------
 
-    # قسم الريليكس (Relics)
+    # --- القسم الأيمن (التحدي الجديد) ---
     draw.rectangle([440, 20, 1070, 730], fill=(20, 24, 34, 255), outline=(45, 60, 85, 255))
     draw.text((460, 35), "EQUIPPED RELICS & STATS", font=font_title, fill=(255, 165, 80, 255))
 
-    y_offset = 75
+    # 1. نظام الشبكة (Grid) للريليكس - 3 صفوف x 2 عمود
     if relics:
-        for idx, r in enumerate(relics[:6], 1):
-            r_name = r.get("name", f"Relic #{idx}")
+        for idx, r in enumerate(relics[:6]):
+            col = idx % 2
+            row = idx // 2
+            
+            # حساب الإحداثيات لكل مربع
+            box_x1 = 455 + (col * 305)
+            box_y1 = 75 + (row * 125)
+            box_x2 = box_x1 + 295
+            box_y2 = box_y1 + 115
+            
+            r_name = r.get("name", f"Relic #{idx+1}")
             r_lvl = r.get("level", 0)
             r_icon = r.get("icon", "")
             
-            draw.rectangle([455, y_offset, 1055, y_offset + 95], fill=(26, 31, 43, 255), outline=(55, 75, 100, 255))
+            draw.rectangle([box_x1, box_y1, box_x2, box_y2], fill=(26, 31, 43, 255), outline=(55, 75, 100, 255))
             
+            # تصغير أيقونة الريليك
             if r_icon:
                 r_img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{r_icon}"
                 r_img = await fetch_image(client, r_img_url)
                 if r_img:
-                    r_img = r_img.resize((70, 70))
-                    card.paste(r_img, (470, y_offset + 12), r_img)
+                    r_img = r_img.resize((55, 55))
+                    card.paste(r_img, (box_x1 + 10, box_y1 + 10), r_img)
 
-            draw.text((550, y_offset + 10), f"{r_name[:32]}", font=font_bold, fill=(230, 235, 245, 255))
-            draw.text((980, y_offset + 10), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
+            draw.text((box_x1 + 75, box_y1 + 10), f"{r_name[:16]}", font=font_bold, fill=(230, 235, 245, 255))
+            draw.text((box_x2 - 25, box_y1 + 10), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
 
             main_stat = r.get("main_affix", {}) or r.get("mainstat", {})
             m_name = main_stat.get("name", "") or main_stat.get("type", "")
             m_display = main_stat.get("display", "") 
             
             if not m_display:
-                m_display = format_stat_value(m_name, main_stat.get("value", ""), is_planar=(idx in [5, 6]))
+                m_display = format_stat_value(m_name, main_stat.get("value", ""), is_planar=(idx in [4, 5]))
                 
             if m_name:
-                draw.text((550, y_offset + 30), f"Main: {m_name} ({m_display})", font=font_small, fill=(255, 215, 100, 255))
+                draw.text((box_x1 + 75, box_y1 + 30), f"Main: {m_name} ({m_display})", font=font_small, fill=(255, 215, 100, 255))
 
+            # ترتيب السبستاتس المصغرة (2x2) داخل كل مربع
             substats = r.get("sub_affix", []) or r.get("sub_affix_list", []) or r.get("substats", [])
             
             for i, sub in enumerate(substats[:4]): 
@@ -154,20 +163,61 @@ async def create_character_card(client, char_data, player_data):
                     s_display = format_stat_value(s_name, sub.get("value", ""))
                 
                 if s_name and s_display:
-                    short_name = str(s_name).replace("_", " ")[:12]
+                    short_name = str(s_name).replace("_", " ")[:10]
                     stat_text = f"{short_name}: {s_display}"
                     
-                    col_x = 550 if i % 2 == 0 else 780 
-                    row_y = y_offset + 55 if i < 2 else y_offset + 75 
+                    sub_col_x = box_x1 + 75 if i % 2 == 0 else box_x1 + 185 
+                    sub_row_y = box_y1 + 55 if i < 2 else box_y1 + 75 
                     
-                    draw.text((col_x, row_y), stat_text, font=font_small, fill=(170, 185, 205, 255))
+                    draw.text((sub_col_x, sub_row_y), stat_text, font=font_small, fill=(170, 185, 205, 255))
             
             if not substats:
-                draw.text((550, y_offset + 55), "No Substats recorded", font=font_small, fill=(170, 185, 205, 255))
-            
-            y_offset += 105
+                draw.text((box_x1 + 75, box_y1 + 55), "No Substats recorded", font=font_small, fill=(170, 185, 205, 255))
     else:
-        draw.text((470, 120), "No Relics Equipped in this Slot", font=font_sub, fill=(170, 170, 170, 255))
+        draw.text((470, 120), "No Relics Equipped", font=font_sub, fill=(170, 170, 170, 255))
+
+    # 2. مربع تأثيرات الأطقم (Set Effects) في الأسفل
+    effects_y = 455
+    draw.rectangle([455, effects_y, 1055, 715], fill=(22, 27, 37, 255), outline=(50, 70, 95, 255))
+    draw.text((470, effects_y + 10), "ACTIVE SET EFFECTS", font=font_title, fill=(255, 165, 80, 255))
+    
+    relic_sets = char_data.get("relic_sets", [])
+    set_y = effects_y + 45
+    
+    for r_set in relic_sets:
+        s_name = r_set.get("name", "Unknown Set")
+        s_num = r_set.get("num", 2)
+        raw_desc = r_set.get("desc", "")
+        
+        # تنظيف كود HTML من وصف تأثير الطقم
+        clean_desc = re.sub(r'<[^>]+>', '', str(raw_desc)).replace("\n", " ")
+        
+        draw.text((470, set_y), f"[{s_num}-Pc] {s_name}", font=font_bold, fill=(100, 230, 150, 255))
+        set_y += 20
+        
+        # نظام طي النص (Word Wrap) عشان ما يطلع برة المربع
+        words = clean_desc.split(" ")
+        line = ""
+        for word in words:
+            test_line = line + word + " "
+            try:
+                text_width = draw.textlength(test_line, font=font_small)
+            except AttributeError:
+                text_width = len(test_line) * 6
+                
+            if text_width < 560:
+                line = test_line
+            else:
+                draw.text((470, set_y), line, font=font_small, fill=(200, 210, 230, 255))
+                set_y += 15
+                line = word + " "
+        
+        if line:
+            draw.text((470, set_y), line, font=font_small, fill=(200, 210, 230, 255))
+            set_y += 20
+            
+        if set_y > 685:  # حماية عشان النص ما يتعدى حدود البطاقة
+            break
 
     buf = BytesIO()
     card.save(buf, format="PNG")
@@ -241,13 +291,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 res = await client.get(url, timeout=15)
                 if res.status_code == 200:
                     data = res.json()
-                    # سحب بيانات الحساب (player) من الرد
                     player_data = data.get("player", {})
                     avatars = data.get("characters", []) or data.get("avatar_list", [])
                     
                     if char_idx < len(avatars):
                         char_data = avatars[char_idx]
-                        # تمرير بيانات الحساب مع بيانات الشخصية للدالة
                         card_buf = await create_character_card(client, char_data, player_data)
                         await query.message.reply_photo(photo=card_buf)
                         return
