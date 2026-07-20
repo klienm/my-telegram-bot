@@ -47,7 +47,7 @@ async def create_character_card(client, char_data):
     # تفاصيل الريليكس (Relics)
     relics = char_data.get("relics", []) or char_data.get("relicList", [])
 
-    # بناء خلفية البطاقة (عالية الدقة لتسع كل التفاصيل)
+    # بناء خلفية البطاقة
     card = Image.new("RGBA", (1100, 750), (18, 20, 28, 255))
     draw = ImageDraw.Draw(card)
 
@@ -108,18 +108,24 @@ async def create_character_card(client, char_data):
             draw.text((550, y_offset + 12), f"{r_name[:35]}", font=font_bold, fill=(230, 235, 245, 255))
             draw.text((980, y_offset + 12), f"+{r_lvl}", font=font_bold, fill=(100, 230, 150, 255))
 
-            # استخراج Substats إن وجدت
-            substats = r.get("substats", [])
+            # استخراج Substats بكل المسارات المحتملة للـ API
+            substats = r.get("substats", []) or r.get("sub_affix_list", []) or []
             sub_text = ""
-            for sub in substats[:4]:
-                s_name = sub.get("name", "")
-                s_val = sub.get("value", "")
-                sub_text += f"{s_name}: {s_val}  |  "
+            for sub in substats:
+                s_name = sub.get("name") or sub.get("field", "")
+                s_val = sub.get("value") or sub.get("display_value", "")
+                if not s_name:
+                    item_type = sub.get("type", "")
+                    s_val = sub.get("value", "")
+                    s_name = item_type[:4]
+                
+                if s_name and s_val:
+                    sub_text += f"{s_name[:6]}: {s_val}  "
             
             if not sub_text:
-                sub_text = "Main Stat / Details Loaded"
+                sub_text = "Main Stat / Stats active"
                 
-            draw.text((550, y_offset + 42), sub_text[:75], font=font_small, fill=(170, 185, 205, 255))
+            draw.text((550, y_offset + 45), sub_text[:85], font=font_small, fill=(170, 185, 205, 255))
             
             y_offset += 105
     else:
