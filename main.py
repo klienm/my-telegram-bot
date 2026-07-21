@@ -95,7 +95,7 @@ def get_dominant_color(img):
     avg_pixel = tiny_img.getpixel((0, 0))
     return int(avg_pixel[0]), int(avg_pixel[1]), int(avg_pixel[2])
 
-# --- دالة رسم البطاقة (خطوط عملاقة واضحة جداً، أيقونات كبيرة، إيدولونز بارزة، بدون بوكسات ريليكس) ---
+# --- دالة رسم البطاقة (خطوط عملاقة، أيقونات بارزة، بدون بوكسات ريليكس وبدون أخطاء) ---
 async def create_character_card(client, char_data, player_data):
     SCALE = 2  # دقة مضاعفة للتنعيم الخارق
     
@@ -174,14 +174,14 @@ async def create_character_card(client, char_data, player_data):
 
     draw = ImageDraw.Draw(card)
     
-    # 3. أحجام خطوط عملاقة، واضحة ومقروءة جداً
+    # 3. أحجام خطوط عملاقة وواضحة جداً
     font_large = get_sharp_font(85 * SCALE, bold=True)
     font_title = get_sharp_font(50 * SCALE, bold=True)
     font_bold = get_sharp_font(38 * SCALE, bold=True)
     font_sub = get_sharp_font(32 * SCALE, bold=False)
     font_small = get_sharp_font(28 * SCALE, bold=False)
 
-    # 4. رسم الإيدولونز بألوان متباينة جداً وواضحة (ذهبي وفحمي)
+    # 4. رسم الإيدولونز بألوان متباينة جداً (ذهبي وفحمي)
     rank = char_data.get("rank", 0)
     rank_icons = char_data.get("rank_icons", [])
     eidolon_start_y = 65 * SCALE
@@ -214,7 +214,7 @@ async def create_character_card(client, char_data, player_data):
                 
         card.paste(e_bg, (eidolon_x, e_y), e_bg)
 
-    # معلومات الشخصية واللاعب (خطوط عملاقة)
+    # معلومات الشخصية واللاعب
     name_y = 530 * SCALE
     draw_shadow_text(draw, (40 * SCALE, name_y), char_name.upper(), font_large, (255, 255, 255, 255))
     draw_shadow_text(draw, (40 * SCALE, name_y + 85 * SCALE), f"LEVEL {char_level} / 80", font_title, text_highlight)
@@ -307,7 +307,7 @@ async def create_character_card(client, char_data, player_data):
         draw_shadow_text(draw, (980 * SCALE - val_width, s_y + 2 * SCALE), stat["value"], font_bold, text_highlight)
         s_y += 42 * SCALE
 
-    # 8. قطع الريليكس (Relics) بدون بوكسات - بخطوط ضخمة وواضحة
+    # 8. قطع الريليكس (Relics) بدون بوكسات - بخطوط ضخمة وواضحة (تم إصلاح خطأ اللصق هنا)
     relics = char_data.get("relics", []) or char_data.get("relicList", []) or []
     for idx, r in enumerate(relics[:6]):
         box_y = (45 + (idx * 124)) * SCALE
@@ -318,7 +318,7 @@ async def create_character_card(client, char_data, player_data):
         if r_icon:
             r_img = await get_cached_icon(client, r_icon, (95 * SCALE, 95 * SCALE))
             if r_img:
-                card.paste(s_img if 's_img' in locals() else r_img, (box_x, box_y + 2 * SCALE), r_img)
+                card.paste(r_img, (box_x, box_y + 2 * SCALE), r_img)
                 
         draw_shadow_text(draw, (box_x + 105 * SCALE, box_y + 2 * SCALE), f"+{r_lvl}", font_bold, text_highlight)
         
@@ -417,7 +417,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_parts = query.data.split("_")
     if data_parts[0] == "hsr":
         uid = data_parts[1]
-    
         char_idx = int(data_parts[2])
 
         target_message_id = query.message.message_id
