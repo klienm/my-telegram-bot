@@ -85,7 +85,7 @@ def draw_shadow_text(draw, position, text, font, fill, shadow_fill=(0, 0, 0, 255
     draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow_fill)
     draw.text((x, y), text, font=font, fill=fill)
 
-# مسارات وروابط تحميل خطوط DejaVu عريضة الحาดة لضمان جودة Figma الاحترافية في بايثون
+# مسارات وروابط تحميل خطوط DejaVu عريضة وحادة لضمان جودة Figma الاحترافية في بايثون
 DEJAVU_BOLD_URL = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans-Bold.ttf"
 DEJAVU_REG_URL = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf"
 
@@ -169,7 +169,7 @@ async def create_character_card(client, char_data, player_data):
     font_large = get_sharp_font(34, bold=True)    # اسم الشخصية
     font_title = get_sharp_font(24, bold=True)    # أسماء السلاح وعناوين المهارات
     font_bold = get_sharp_font(18, bold=True)     # الإحصائيات الرئيسية ونسب الريليكس والمستويات
-    font_sub = get_sharp_font(15, bold=False)     # البيانات الفرعية والمستويات الجانبية
+    font_sub = get_sharp_font(15, bold=False)     # البيانات الفرعية والمستويات الجانبية وشرح السيتات
     font_small = get_sharp_font(13, bold=False)   # تفاصيل إحصائيات الريليكس الفرعية
 
     # جلب صورة السبلاش آرت مسبقاً لاستخراج الألوان وعرضها
@@ -294,7 +294,7 @@ async def create_character_card(client, char_data, player_data):
     gradient_styled = mask_rounded_fade(gradient, radius=24, fade_width=80)
     card.paste(gradient_styled, (40, 760 - grad_h), gradient_styled)
     
-    # تفاصيل الشخصية والاسم بمقاسات خط ممتازة
+    # تفاصيل الشخصية والاسم بمقاسات خط ممتازة وألوان واضحة بعيدة عن الرمادي الداكن
     name_y = 570
     draw_shadow_text(draw, (75, name_y), char_name.upper(), font_large, highlight_color)
     draw_shadow_text(draw, (75, name_y + 38), f"LEVEL {char_level} / 80", font_bold, (255, 240, 210, 255))
@@ -381,7 +381,7 @@ async def create_character_card(client, char_data, player_data):
         
         stat_y += 44  # زيادة المسافة الرأسية بين الإحصائيات لتلافي التداخل
 
-    # تأثير المجموعات (Set Effects) طافٍ
+    # تأثير المجموعات (Set Effects) طافٍ بخط واضح ومريح للعين
     relic_sets = char_data.get("relic_sets", [])
     set_y = 425
     for r_set in relic_sets[:2]:
@@ -390,27 +390,29 @@ async def create_character_card(client, char_data, player_data):
         raw_desc = r_set.get("desc", "")
         clean_desc = re.sub(r'<[^>]+>', '', str(raw_desc)).replace("\n", " ")
         
+        # العنوان بخط رئيسي واضح (font_bold بمقاس 18)
         draw_shadow_text(draw, (870, set_y), f"[{s_num}-Pc] {s_name}", font_bold, highlight_color)
-        set_y += 20
+        set_y += 24
         
         words = clean_desc.split(" ")
         line = ""
         for word in words:
             test_line = line + word + " "
             try:
-                text_width = draw.textlength(test_line, font=font_small)
+                text_width = draw.textlength(test_line, font=font_sub)
             except AttributeError:
-                text_width = len(test_line) * 6
+                text_width = len(test_line) * 7.5
                 
-            if text_width < 290:  # تضييق العرض نسبياً لاستيعاب الخط الأكبر
+            if text_width < 290:
                 line = test_line
             else:
-                draw_shadow_text(draw, (870, set_y), line, font_small, (240, 240, 245, 255))
-                set_y += 16
+                # شرح السيت بخط أكبر وأوضح (font_sub بمقاس 15)
+                draw_shadow_text(draw, (870, set_y), line, font_sub, (240, 240, 245, 255))
+                set_y += 20
                 line = word + " "
         if line:
-            draw_shadow_text(draw, (870, set_y), line, font_small, (240, 240, 245, 255))
-            set_y += 24
+            draw_shadow_text(draw, (870, set_y), line, font_sub, (240, 240, 245, 255))
+            set_y += 28
 
 
     # ==================== القسم الرابع (أقصى اليمين): قطع الريليكس الستة (طافية وسلسة) ====================
