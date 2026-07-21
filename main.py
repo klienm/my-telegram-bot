@@ -49,7 +49,7 @@ def resize_cover(img, target_w, target_h):
 FONT_BOLD_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Bold.ttf"
 FONT_REG_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Medium.ttf"
 
-# استخدام مجلد مؤقت آمن لضمان القدرة على الكتابة في البيئات السحابية المغلقة
+# استخدام مجلد مؤقت آمن لضمان صلاحيات الكتابة وحفظ الخطوط الحادة على خوادم الاستضافة
 temp_dir = tempfile.gettempdir()
 LOCAL_BOLD_PATH = os.path.join(temp_dir, "Montserrat-Bold.ttf")
 LOCAL_REG_PATH = os.path.join(temp_dir, "Montserrat-Medium.ttf")
@@ -57,7 +57,6 @@ LOCAL_REG_PATH = os.path.join(temp_dir, "Montserrat-Medium.ttf")
 def download_fonts_on_startup():
     """
     تحميل خطوط Montserrat المتجهية وحفظها في مجلد النظام المؤقت فور إقلاع البوت.
-    هذا الإجراء يضمن عدم اعتماد البوت على خطوط النظام الافتراضية المشوهة نهائياً.
     """
     if not os.path.exists(LOCAL_BOLD_PATH):
         print("⏳ Startup: Downloading Montserrat-Bold font for high-resolution text...")
@@ -210,12 +209,12 @@ async def create_character_card(client, char_data, player_data):
 
     draw = ImageDraw.Draw(card)
     
-    # 3. أحجام خطوط عملاقة ومقروءة جداً (تم تكبيرها بنسبة كبيرة وحمايتها بـ SCALE)
-    font_large = get_sharp_font(110 * SCALE, bold=True)
-    font_title = get_sharp_font(65 * SCALE, bold=True)
-    font_bold = get_sharp_font(46 * SCALE, bold=True)
-    font_sub = get_sharp_font(38 * SCALE, bold=False)
-    font_small = get_sharp_font(32 * SCALE, bold=False)
+    # 3. أحجام خطوط موزونة واحترافية وبدقة متناهية تمنع التداخل نهائياً
+    font_large = get_sharp_font(52 * SCALE, bold=True)   # اسم الشخصية
+    font_title = get_sharp_font(30 * SCALE, bold=True)   # مستويات الشخصية والسلاح
+    font_bold = get_sharp_font(21 * SCALE, bold=True)    # القيم والإحصائيات الرئيسية
+    font_sub = get_sharp_font(18 * SCALE, bold=False)    # مسميات الإحصائيات
+    font_small = get_sharp_font(15 * SCALE, bold=False)  # الإحصائيات الفرعية
 
     # 4. رسم الإيدولونز بألوان متباينة جداً (ذهبي وفحمي)
     rank = char_data.get("rank", 0)
@@ -250,7 +249,7 @@ async def create_character_card(client, char_data, player_data):
                 
         card.paste(e_bg, (eidolon_x, e_y), e_bg)
 
-    # معلومات الشخصية واللاعب
+    # معلومات الشخصية واللاعب بمقاسات مريحة وتناسق عمودي ممتاز
     name_y = 530 * SCALE
     draw_shadow_text(draw, (40 * SCALE, name_y), char_name.upper(), font_large, (255, 255, 255, 255))
     draw_shadow_text(draw, (40 * SCALE, name_y + 105 * SCALE), f"LEVEL {char_level} / 80", font_title, text_highlight)
@@ -259,7 +258,7 @@ async def create_character_card(client, char_data, player_data):
     p_uid = player_data.get("uid", "-")
     draw_shadow_text(draw, (40 * SCALE, name_y + 175 * SCALE), f"{p_name}  •  UID {p_uid}", font_sub, (255, 255, 255, 255))
 
-    # 5. السلاح (Light Cone) بخطوط كبيرة وواضحة
+    # 5. السلاح (Light Cone) بمقاسات منسقة
     equip = char_data.get("light_cone", {})
     if equip:
         lc_name = equip.get("name", "Unknown LC")
@@ -299,7 +298,7 @@ async def create_character_card(client, char_data, player_data):
             
         draw_shadow_text(draw, (lc_x + 110 * SCALE, lc_y + 86 * SCALE), prop_text[:42], font_small, (255, 255, 255, 255))
 
-    # 6. المهارات (Traces) بخط كبير ومسافات متناسقة لمنع التداخل
+    # 6. المهارات (Traces) - تم زيادة مسافات التباعد الرأسي لمنع تداخل الأحرف
     skills = char_data.get("skills", [])
     if skills:
         tr_x, tr_y = 585 * SCALE, 195 * SCALE
@@ -321,11 +320,11 @@ async def create_character_card(client, char_data, player_data):
             draw_shadow_text(draw, (tr_x + 330 * SCALE, t_y + 4 * SCALE), f"Lv.{sk_level}/{sk_max}", font_bold, text_highlight)
             t_y += 48 * SCALE
 
-    # 7. لوحة الإحصائيات (Stats) بخطوط عريضة ومريحة للعين
-    stat_start_x, stat_start_y = 585 * SCALE, 395 * SCALE
+    # 7. لوحة الإحصائيات (Stats) بمقاسات وهوامش مريحة جداً
+    stat_start_x, stat_start_y = 585 * SCALE, 415 * SCALE
     draw_shadow_text(draw, (stat_start_x, stat_start_y), "COMBAT STATS", font_bold, text_highlight)
     
-    s_y = stat_start_y + 50 * SCALE
+    s_y = stat_start_y + 46 * SCALE
     for stat in rendered_stats[:7]:
         s_icon = stat["icon"]
         if s_icon:
@@ -341,9 +340,9 @@ async def create_character_card(client, char_data, player_data):
             val_width = len(stat["value"]) * 14 * SCALE
             
         draw_shadow_text(draw, (980 * SCALE - val_width, s_y + 2 * SCALE), stat["value"], font_bold, text_highlight)
-        s_y += 44 * SCALE
+        s_y += 42 * SCALE
 
-    # 8. قطع الريليكس (Relics) بدون بوكسات - بخطوط ضخمة وواضحة جداً وبدون أخطاء
+    # 8. قطع الريليكس (Relics) بمقاسات وهوامش ذهبية منسقة تمنع التداخل تماماً
     relics = char_data.get("relics", []) or char_data.get("relicList", []) or []
     for idx, r in enumerate(relics[:6]):
         box_y = (45 + (idx * 124)) * SCALE
