@@ -45,7 +45,6 @@ def resize_cover(img, target_w, target_h):
     top = (new_h - target_h) // 2
     return img.crop((left, top, left + target_w, top + target_h))
 
-# خطوط Montserrat الاحترافية لدقة نصوص فائقة
 FONT_BOLD_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Bold.ttf"
 FONT_REG_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Medium.ttf"
 
@@ -84,7 +83,7 @@ async def get_cached_icon(client, icon_path, size=None):
         return img
     return None
 
-def draw_shadow_text(draw, position, text, font, fill, shadow_fill=(0, 0, 0, 240), offset=(3, 3)):
+def draw_shadow_text(draw, position, text, font, fill, shadow_fill=(0, 0, 0, 250), offset=(3, 3)):
     x, y = position
     draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow_fill)
     draw.text((x, y), text, font=font, fill=fill)
@@ -96,9 +95,9 @@ def get_dominant_color(img):
     avg_pixel = tiny_img.getpixel((0, 0))
     return int(avg_pixel[0]), int(avg_pixel[1]), int(avg_pixel[2])
 
-# --- دالة رسم البطاقة المطورة والمضبوطة تماماً ---
+# --- دالة رسم البطاقة (خطوط واضحة، أيقونات كبيرة، إيدولونز واضحة، بدون بوكسات ريليكس) ---
 async def create_character_card(client, char_data, player_data):
-    SCALE = 2  # مضاعفة الدقة للرسم الداخلي
+    SCALE = 2  # دقة مضاعفة للتنعيم الخارق
     
     char_name = char_data.get("name", "Character")
     char_level = char_data.get("level", 1)
@@ -144,8 +143,8 @@ async def create_character_card(client, char_data, player_data):
                 "icon": stat["icon"]
             })
 
-    # 2. إنشاء اللوحة
-    card = Image.new("RGBA", (1600 * SCALE, 800 * SCALE), (15, 15, 22, 255))
+    # 2. إنشاء اللوحة بخلفية داكنة راقية
+    card = Image.new("RGBA", (1600 * SCALE, 800 * SCALE), (12, 12, 18, 255))
     
     splash_img = None
     if char_id:
@@ -156,13 +155,11 @@ async def create_character_card(client, char_data, player_data):
         dom_r, dom_g, dom_b = get_dominant_color(splash_img)
         text_highlight = (min(255, dom_r + 100), min(255, dom_g + 100), min(255, dom_b + 100), 255)
         
-        # خلفية مغبشة متدرجة
         bg_blur = resize_cover(splash_img, 1600 * SCALE, 800 * SCALE).filter(ImageFilter.GaussianBlur(130))
-        tint = Image.new("RGBA", (1600 * SCALE, 800 * SCALE), (dom_r // 6, dom_g // 6, dom_b // 6, 160))
+        tint = Image.new("RGBA", (1600 * SCALE, 800 * SCALE), (dom_r // 6, dom_g // 6, dom_b // 6, 170))
         bg_blur = Image.alpha_composite(bg_blur.convert("RGBA"), tint)
         card.paste(bg_blur, (0, 0))
 
-        # سبلاش آرت مع تلاشي ناعم
         splash_render = resize_cover(splash_img, 620 * SCALE, 800 * SCALE)
         mask = Image.new("L", splash_render.size, 255)
         mask_draw = ImageDraw.Draw(mask)
@@ -177,50 +174,56 @@ async def create_character_card(client, char_data, player_data):
 
     draw = ImageDraw.Draw(card)
     
-    # 3. أحجام خطوط محسنة وواضحة جداً (مصححة لتبدو بالحجم الطبيعي والمقروء تماماً)
-    font_large = get_sharp_font(52 * SCALE, bold=True)
-    font_title = get_sharp_font(30 * SCALE, bold=True)
-    font_bold = get_sharp_font(22 * SCALE, bold=True)
-    font_sub = get_sharp_font(20 * SCALE, bold=False)
-    font_small = get_sharp_font(18 * SCALE, bold=False)
+    # 3. أحجام خطوط كبيرة، واضحة ومقروءة تماماً
+    font_large = get_sharp_font(60 * SCALE, bold=True)
+    font_title = get_sharp_font(34 * SCALE, bold=True)
+    font_bold = get_sharp_font(26 * SCALE, bold=True)
+    font_sub = get_sharp_font(23 * SCALE, bold=False)
+    font_small = get_sharp_font(20 * SCALE, bold=False)
 
-    # 4. رسم الإيدولونز (Eidolons)
+    # 4. رسم الإيدولونز بألوان متباينة جداً وواضحة (بدون رمادي باهت أو أبيض)
     rank = char_data.get("rank", 0)
     rank_icons = char_data.get("rank_icons", [])
-    eidolon_start_y = 75 * SCALE
-    eidolon_x = 525 * SCALE
+    eidolon_start_y = 65 * SCALE
+    eidolon_x = 520 * SCALE
+    e_size = 46 * SCALE
     
     for i in range(6):
-        e_y = eidolon_start_y + (i * 76 * SCALE)
-        e_bg = Image.new("RGBA", (40 * SCALE, 40 * SCALE), (0, 0, 0, 0))
+        e_y = eidolon_start_y + (i * 78 * SCALE)
+        e_bg = Image.new("RGBA", (e_size, e_size), (0, 0, 0, 0))
         e_draw = ImageDraw.Draw(e_bg)
         
         is_unlocked = i < rank
-        circle_color = text_highlight if is_unlocked else (100, 100, 100, 120)
+        if is_unlocked:
+            fill_color = (245, 165, 35, 240)    # ذهبي/أصفر مشرق وواضح
+            border_color = (255, 220, 100, 255)
+        else:
+            fill_color = (40, 40, 55, 230)      # فحمي غامق متبايناً تماماً عن المضيء
+            border_color = (110, 110, 130, 200)
         
-        e_draw.ellipse([0, 0, 40 * SCALE, 40 * SCALE], fill=circle_color)
+        e_draw.ellipse([0, 0, e_size, e_size], fill=fill_color, outline=border_color, width=2 * SCALE)
         
         if i < len(rank_icons):
-            e_icon = await get_cached_icon(client, rank_icons[i], (28 * SCALE, 28 * SCALE))
+            e_icon = await get_cached_icon(client, rank_icons[i], (32 * SCALE, 32 * SCALE))
             if e_icon:
-                icon_pos = ((40 * SCALE - 28 * SCALE) // 2, (40 * SCALE - 28 * SCALE) // 2)
+                icon_pos = ((e_size - 32 * SCALE) // 2, (e_size - 32 * SCALE) // 2)
                 if not is_unlocked:
                     e_icon = e_icon.convert("LA").convert("RGBA")
-                    e_icon.putalpha(e_icon.split()[3].point(lambda p: p * 0.35))
+                    e_icon.putalpha(e_icon.split()[3].point(lambda p: p * 0.3))
                 e_bg.paste(e_icon, icon_pos, e_icon)
                 
         card.paste(e_bg, (eidolon_x, e_y), e_bg)
 
     # معلومات الشخصية واللاعب
-    name_y = 585 * SCALE
+    name_y = 575 * SCALE
     draw_shadow_text(draw, (40 * SCALE, name_y), char_name.upper(), font_large, (255, 255, 255, 255))
-    draw_shadow_text(draw, (40 * SCALE, name_y + 54 * SCALE), f"LEVEL {char_level} / 80", font_title, text_highlight)
+    draw_shadow_text(draw, (40 * SCALE, name_y + 60 * SCALE), f"LEVEL {char_level} / 80", font_title, text_highlight)
     
     p_name = player_data.get("nickname", "Unknown")
     p_uid = player_data.get("uid", "-")
-    draw_shadow_text(draw, (40 * SCALE, name_y + 96 * SCALE), f"{p_name}  •  UID {p_uid}", font_sub, (255, 255, 255, 255))
+    draw_shadow_text(draw, (40 * SCALE, name_y + 104 * SCALE), f"{p_name}  •  UID {p_uid}", font_sub, (255, 255, 255, 255))
 
-    # 5. السلاح (Light Cone) - جلب النسخة الكبيرة الأصلية (light_cone_portrait)
+    # 5. السلاح (Light Cone) بأيقونة كبيرة وواضحة
     equip = char_data.get("light_cone", {})
     if equip:
         lc_name = equip.get("name", "Unknown LC")
@@ -228,23 +231,23 @@ async def create_character_card(client, char_data, player_data):
         lc_rank = equip.get("rank", 1)
         lc_id = str(equip.get("id", ""))
         
-        lc_x, lc_y = 590 * SCALE, 70 * SCALE
+        lc_x, lc_y = 585 * SCALE, 60 * SCALE
         lc_img = None
         if lc_id:
             lc_portrait_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/image/light_cone_portrait/{lc_id}.png"
             lc_img = await fetch_image(client, lc_portrait_url)
             if lc_img:
-                lc_img = resize_cover(lc_img, 76 * SCALE, 96 * SCALE)
+                lc_img = resize_cover(lc_img, 84 * SCALE, 106 * SCALE)
         
         if not lc_img:
             lc_icon = equip.get("icon", "")
-            lc_img = await get_cached_icon(client, lc_icon, (76 * SCALE, 96 * SCALE))
+            lc_img = await get_cached_icon(client, lc_icon, (84 * SCALE, 106 * SCALE))
             
         if lc_img:
             card.paste(lc_img, (lc_x, lc_y), lc_img)
                 
-        draw_shadow_text(draw, (lc_x + 92 * SCALE, lc_y + 2 * SCALE), f"{lc_name[:24]}", font_bold, text_highlight)
-        draw_shadow_text(draw, (lc_x + 92 * SCALE, lc_y + 30 * SCALE), f"Lv. {lc_level}  |  Superimposition {lc_rank}", font_sub, (255, 255, 255, 255))
+        draw_shadow_text(draw, (lc_x + 100 * SCALE, lc_y + 2 * SCALE), f"{lc_name[:22]}", font_bold, text_highlight)
+        draw_shadow_text(draw, (lc_x + 100 * SCALE, lc_y + 32 * SCALE), f"Lv. {lc_level}  |  Superimposition {lc_rank}", font_sub, (255, 255, 255, 255))
         
         lc_props = equip.get("properties", [])
         prop_text = ""
@@ -258,15 +261,15 @@ async def create_character_card(client, char_data, player_data):
         if not prop_text:
             prop_text = "Standard Light Cone Passive Active."
             
-        draw_shadow_text(draw, (lc_x + 92 * SCALE, lc_y + 58 * SCALE), prop_text[:42], font_small, (255, 255, 255, 255))
+        draw_shadow_text(draw, (lc_x + 100 * SCALE, lc_y + 64 * SCALE), prop_text[:40], font_small, (255, 255, 255, 255))
 
-    # 6. المهارات (Traces)
+    # 6. المهارات (Traces) بأيقونات كبيرة
     skills = char_data.get("skills", [])
     if skills:
-        tr_x, tr_y = 590 * SCALE, 205 * SCALE
+        tr_x, tr_y = 585 * SCALE, 195 * SCALE
         draw_shadow_text(draw, (tr_x, tr_y), "TRACES & ABILITIES", font_bold, text_highlight)
         
-        t_y = tr_y + 32 * SCALE
+        t_y = tr_y + 34 * SCALE
         for skill in skills[:4]:
             sk_name = skill.get("name", "Skill")
             sk_level = skill.get("level", 1)
@@ -274,57 +277,50 @@ async def create_character_card(client, char_data, player_data):
             sk_icon = skill.get("icon", "")
             
             if sk_icon:
-                sk_img = await get_cached_icon(client, sk_icon, (38 * SCALE, 38 * SCALE))
+                sk_img = await get_cached_icon(client, sk_icon, (42 * SCALE, 42 * SCALE))
                 if sk_img:
                     card.paste(sk_img, (tr_x, t_y - 4 * SCALE), sk_img)
                     
-            draw_shadow_text(draw, (tr_x + 46 * SCALE, t_y + 2 * SCALE), sk_name[:18], font_small, (255, 255, 255, 255))
-            draw_shadow_text(draw, (tr_x + 315 * SCALE, t_y + 2 * SCALE), f"Lv.{sk_level}/{sk_max}", font_bold, text_highlight)
-            t_y += 35 * SCALE
+            draw_shadow_text(draw, (tr_x + 50 * SCALE, t_y + 2 * SCALE), sk_name[:16], font_small, (255, 255, 255, 255))
+            draw_shadow_text(draw, (tr_x + 320 * SCALE, t_y + 2 * SCALE), f"Lv.{sk_level}/{sk_max}", font_bold, text_highlight)
+            t_y += 38 * SCALE
 
     # 7. لوحة الإحصائيات (Stats)
-    stat_start_x, stat_start_y = 590 * SCALE, 385 * SCALE
+    stat_start_x, stat_start_y = 585 * SCALE, 380 * SCALE
     draw_shadow_text(draw, (stat_start_x, stat_start_y), "COMBAT STATS", font_bold, text_highlight)
     
-    s_y = stat_start_y + 36 * SCALE
+    s_y = stat_start_y + 38 * SCALE
     for stat in rendered_stats[:8]:
         s_icon = stat["icon"]
         if s_icon:
-            s_img = await get_cached_icon(client, s_icon, (26 * SCALE, 26 * SCALE))
+            s_img = await get_cached_icon(client, s_icon, (30 * SCALE, 30 * SCALE))
             if s_img:
                 card.paste(s_img, (stat_start_x, s_y - 2 * SCALE), s_img)
                 
-        draw_shadow_text(draw, (stat_start_x + 36 * SCALE, s_y), stat["name"], font_sub, (255, 255, 255, 255))
+        draw_shadow_text(draw, (stat_start_x + 40 * SCALE, s_y), stat["name"], font_sub, (255, 255, 255, 255))
         
         try:
             val_width = draw.textlength(stat["value"], font=font_sub)
         except AttributeError:
-            val_width = len(stat["value"]) * 10 * SCALE
+            val_width = len(stat["value"]) * 11 * SCALE
             
-        draw_shadow_text(draw, (965 * SCALE - val_width, s_y), stat["value"], font_bold, text_highlight)
-        s_y += 34 * SCALE
+        draw_shadow_text(draw, (980 * SCALE - val_width, s_y), stat["value"], font_bold, text_highlight)
+        s_y += 36 * SCALE
 
-    # 8. قطع الريليكس (Relics) داخل بوكسات مرتبة مع ظل خفيف (Shadow + Container)
+    # 8. قطع الريليكس (Relics) بدون بوكسات - عرض نظيف ومرتب بخطوط كبيرة
     relics = char_data.get("relics", []) or char_data.get("relicList", []) or []
     for idx, r in enumerate(relics[:6]):
-        box_y = (70 + (idx * 108)) * SCALE
-        box_x = 1005 * SCALE
-        box_w = 565 * SCALE
-        box_h = 100 * SCALE
-        
-        # رسم ظل خفيف خلف البوكس لإعطاء عمق غير بدائي
-        draw.rectangle([box_x + 4 * SCALE, box_y + 4 * SCALE, box_x + box_w + 4 * SCALE, box_y + box_h + 4 * SCALE], fill=(0, 0, 0, 100))
-        # رسم بوكس القطعة بخلفية داكنة راقية وإطار خفيف جداً
-        draw.rectangle([box_x, box_y, box_x + box_w, box_y + box_h], fill=(22, 22, 32, 215), outline=(255, 255, 255, 35), width=1 * SCALE)
+        box_y = (60 + (idx * 112)) * SCALE
+        box_x = 1000 * SCALE
         
         r_lvl = r.get("level", 0)
         r_icon = r.get("icon", "")
         if r_icon:
-            r_img = await get_cached_icon(client, r_icon, (72 * SCALE, 72 * SCALE))
+            r_img = await get_cached_icon(client, r_icon, (80 * SCALE, 80 * SCALE))
             if r_img:
-                card.paste(r_img, (box_x + 10 * SCALE, box_y + 14 * SCALE), r_img)
+                card.paste(r_img, (box_x, box_y + 2 * SCALE), r_img)
                 
-        draw_shadow_text(draw, (box_x + 92 * SCALE, box_y + 10 * SCALE), f"+{r_lvl}", font_bold, text_highlight)
+        draw_shadow_text(draw, (box_x + 90 * SCALE, box_y + 4 * SCALE), f"+{r_lvl}", font_bold, text_highlight)
         
         main_stat = r.get("main_affix", {})
         m_name = main_stat.get("name", "")
@@ -333,7 +329,7 @@ async def create_character_card(client, char_data, player_data):
         if not m_display:
              m_display = f"{m_val*100:.1f}%" if main_stat.get("percent") else str(int(m_val))
              
-        draw_shadow_text(draw, (box_x + 142 * SCALE, box_y + 10 * SCALE), f"{m_name}: {m_display}", font_bold, (255, 255, 255, 255))
+        draw_shadow_text(draw, (box_x + 150 * SCALE, box_y + 4 * SCALE), f"{m_name}: {m_display}", font_bold, (255, 255, 255, 255))
         
         substats = r.get("sub_affix", [])
         for i, sub in enumerate(substats[:4]):
@@ -344,11 +340,11 @@ async def create_character_card(client, char_data, player_data):
                 s_display = f"{s_val*100:.1f}%" if sub.get("percent") else str(int(s_val))
                 
             stat_text = f"{s_name}: {s_display}"
-            sub_x = box_x + 92 * SCALE if i % 2 == 0 else box_x + 330 * SCALE
-            sub_y = box_y + 38 * SCALE if i < 2 else box_y + 64 * SCALE
+            sub_x = box_x + 90 * SCALE if i % 2 == 0 else box_x + 340 * SCALE
+            sub_y = box_y + 36 * SCALE if i < 2 else box_y + 64 * SCALE
             draw_shadow_text(draw, (sub_x, sub_y), stat_text, font_small, (255, 255, 255, 255))
 
-    # الخطوة النهائية السحرية: التصغير بالـ LANCZOS مع مرشح حدّة إضافي (Sharpen) لاستعادة الوضوح التام
+    # التنعيم الأخير
     card = card.resize((1600, 800), Image.Resampling.LANCZOS)
     card = card.filter(ImageFilter.SHARPEN)
 
