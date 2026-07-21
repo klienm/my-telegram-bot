@@ -85,7 +85,7 @@ def draw_shadow_text(draw, position, text, font, fill, shadow_fill=(0, 0, 0, 255
     draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow_fill)
     draw.text((x, y), text, font=font, fill=fill)
 
-# مسارات وروابط تحميل خطوط DejaVu عريضة وحادة لضمان جودة Figma الاحترافية في بايثون
+# مسارات وروابط تحميل خطوط DejaVu عريضة الحาดة لضمان جودة Figma الاحترافية في بايثون
 DEJAVU_BOLD_URL = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans-Bold.ttf"
 DEJAVU_REG_URL = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf"
 
@@ -166,11 +166,11 @@ async def create_character_card(client, char_data, player_data):
     draw = ImageDraw.Draw(card)
 
     # جلب الخطوط بشكل حاد وبمقاسات كبيرة ومثالية تمنع الإجهاد البصري تماماً
-    font_large = get_sharp_font(34, bold=True)   # اسم الشخصية
-    font_title = get_sharp_font(24, bold=True)   # أسماء السلاح وعناوين المهارات
-    font_bold = get_sharp_font(18, bold=True)    # الإحصائيات الرئيسية ونسب الريليكس والمستويات
-    font_sub = get_sharp_font(15, bold=False)    # البيانات الفرعية والمستويات الجانبية
-    font_small = get_sharp_font(13, bold=False)  # تفاصيل إحصائيات الريليكس الفرعية
+    font_large = get_sharp_font(34, bold=True)    # اسم الشخصية
+    font_title = get_sharp_font(24, bold=True)    # أسماء السلاح وعناوين المهارات
+    font_bold = get_sharp_font(18, bold=True)     # الإحصائيات الرئيسية ونسب الريليكس والمستويات
+    font_sub = get_sharp_font(15, bold=False)     # البيانات الفرعية والمستويات الجانبية
+    font_small = get_sharp_font(13, bold=False)   # تفاصيل إحصائيات الريليكس الفرعية
 
     # جلب صورة السبلاش آرت مسبقاً لاستخراج الألوان وعرضها
     splash_img = None
@@ -297,7 +297,7 @@ async def create_character_card(client, char_data, player_data):
     # تفاصيل الشخصية والاسم بمقاسات خط ممتازة
     name_y = 570
     draw_shadow_text(draw, (75, name_y), char_name.upper(), font_large, highlight_color)
-    draw_shadow_text(draw, (75, name_y + 38), f"LEVEL {char_level} / 80", font_bold, (220, 225, 235, 255))
+    draw_shadow_text(draw, (75, name_y + 38), f"LEVEL {char_level} / 80", font_bold, (255, 240, 210, 255))
     
     # معلومات الحساب بالأسفل
     p_name = player_data.get("nickname", "Unknown")
@@ -371,7 +371,7 @@ async def create_character_card(client, char_data, player_data):
             if s_img:
                 card.paste(s_img, (870, stat_y), s_img)
                 
-        draw_shadow_text(draw, (905, stat_y + 3), s_name, font_bold, (200, 210, 230, 255))
+        draw_shadow_text(draw, (905, stat_y + 3), s_name, font_bold, (255, 240, 220, 255))
         
         try:
             val_width = draw.textlength(s_val, font=font_bold)
@@ -405,11 +405,11 @@ async def create_character_card(client, char_data, player_data):
             if text_width < 290:  # تضييق العرض نسبياً لاستيعاب الخط الأكبر
                 line = test_line
             else:
-                draw_shadow_text(draw, (870, set_y), line, font_small, (180, 195, 215, 255))
+                draw_shadow_text(draw, (870, set_y), line, font_small, (240, 240, 245, 255))
                 set_y += 16
                 line = word + " "
         if line:
-            draw_shadow_text(draw, (870, set_y), line, font_small, (180, 195, 215, 255))
+            draw_shadow_text(draw, (870, set_y), line, font_small, (240, 240, 245, 255))
             set_y += 24
 
 
@@ -429,7 +429,7 @@ async def create_character_card(client, char_data, player_data):
                 card.paste(r_img, (box_x1, box_y1 + 8), r_img)
                 
         # اقتصاص أسماء الريليكس لـ 14 حرفاً لتجنب التداخل مع مستوى الريليك
-        draw_shadow_text(draw, (box_x1 + 60, box_y1 + 12), f"{r_name[:14]}", font_bold, (230, 235, 245, 255))
+        draw_shadow_text(draw, (box_x1 + 60, box_y1 + 12), f"{r_name[:14]}", font_bold, (255, 250, 240, 255))
         draw_shadow_text(draw, (box_x2 - 38, box_y1 + 12), f"+{r_lvl}", font_bold, highlight_color)
         
         main_stat = r.get("main_affix", {}) or r.get("mainstat", {})
@@ -454,7 +454,7 @@ async def create_character_card(client, char_data, player_data):
                 
                 sub_col_x = box_x1 + 60 if i % 2 == 0 else box_x1 + 175
                 sub_row_y = box_y1 + 58 if i < 2 else box_y1 + 82
-                draw_shadow_text(draw, (sub_col_x, sub_row_y), stat_text, font_small, (220, 225, 235, 255))
+                draw_shadow_text(draw, (sub_col_x, sub_row_y), stat_text, font_small, (240, 240, 245, 255))
 
     buf = BytesIO()
     card.save(buf, format="PNG")
