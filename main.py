@@ -124,16 +124,58 @@ async def create_character_card(client, char_data, player_data):
     card = Image.new("RGBA", (1600, 800), (10, 12, 18, 255))
     draw = ImageDraw.Draw(card)
 
+    # مصفوفات للبحث عن أفضل خط عريض ونظيف مثبت على نظام التشغيل
+    FONT_DIR_SEARCH_BOLD = [
+        "/usr/share/fonts/truetype/montserrat/Montserrat-Bold.ttf",
+        "/usr/share/fonts/truetype/roboto/hinted/Roboto-Bold.ttf",
+        "/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
+    ]
+    FONT_DIR_SEARCH_REG = [
+        "/usr/share/fonts/truetype/montserrat/Montserrat-Regular.ttf",
+        "/usr/share/fonts/truetype/roboto/hinted/Roboto-Regular.ttf",
+        "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
+    ]
+
+    selected_bold_path = None
+    selected_reg_path = None
+
+    for path in FONT_DIR_SEARCH_BOLD:
+        if os.path.exists(path):
+            selected_bold_path = path
+            break
+
+    for path in FONT_DIR_SEARCH_REG:
+        if os.path.exists(path):
+            selected_reg_path = path
+            break
+
+    # تطبيق مقاسات الخطوط الكبيرة والواضحة جداً لحماية العين من الإجهاد
     try:
-        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
-        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
-        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
-        font_sub = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
-        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+        if selected_bold_path and selected_reg_path:
+            font_large = ImageFont.truetype(selected_bold_path, 34)
+            font_title = ImageFont.truetype(selected_bold_path, 24)
+            font_bold = ImageFont.truetype(selected_bold_path, 18)
+            font_sub = ImageFont.truetype(selected_reg_path, 16)
+            font_small = ImageFont.truetype(selected_reg_path, 13)
+        else:
+            # في حال تعذر العثور على المسارات، نستخدم خط DejaVu الافتراضي بمقاسات كبيرة
+            font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 34)
+            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+            font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
+            font_sub = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
     except Exception:
         font_large = font_title = font_bold = font_sub = font_small = ImageFont.load_default()
 
-    # جلب صورة السبلاش آرت مسبقاً لاستخراج الألوان وعرضها
+    # جلب صورة السبلاش آرت لاستخراج الألوان وعرضها
     splash_img = None
     if char_id:
         portrait_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/image/character_portrait/{char_id}.png"
@@ -144,12 +186,12 @@ async def create_character_card(client, char_data, player_data):
         img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{splash_icon}"
         splash_img = await fetch_image(client, img_url)
 
-    # الألوان الافتراضية للبطاقة في حال تعذر الحصول على الصورة
+    # الألوان الافتراضية
     highlight_color = (255, 215, 100, 255)
     subtitle_color = (150, 200, 255, 255)
     bg_color = (10, 12, 18, 255)
 
-    # 1. تحليل الصورة واستخراج الألوان برمجياً بنسبة 100% لانسجام تام
+    # 1. تحليل الصورة واستخراج ألوان دافئة ومشرقة بالكامل للخلفية وتفاصيل الكارد
     if splash_img:
         resample_filter = getattr(Image, "Resampling", None)
         box_filter = resample_filter.BOX if resample_filter else getattr(Image, "BOX", Image.NEAREST)
@@ -157,25 +199,25 @@ async def create_character_card(client, char_data, player_data):
         avg_pixel = tiny_img.getpixel((0, 0))
         r, g, b = int(avg_pixel[0]), int(avg_pixel[1]), int(avg_pixel[2])
         
-        # اشتقاق لون خلفية داكن بنسبة 8% من اللون الأصلي
-        bg_color = (int(r * 0.08), int(g * 0.08), int(b * 0.08), 255)
+        # زيادة سطوع خلفية الكارد المشتقة من ألوان الشخصية (تعديل 18% بدلاً من 8%) لجعلها مفعمة بالحيوية
+        bg_color = (int(r * 0.18), int(g * 0.18), int(b * 0.18), 255)
         bg_base = Image.new("RGBA", (1600, 800), bg_color)
         
-        # تضبيب عميق ومكبر للخلفية من السبلاش آرت
+        # تخفيف شدة التغبيش لـ 30 (بدلاً من 50) للحفاظ على عمق الخلفية ووضوح تفاصيل السبلاش آرت
         blurred_splash = resize_cover(splash_img, 1600, 800, focus_y=0.2)
-        blurred_splash = blurred_splash.filter(ImageFilter.GaussianBlur(radius=50))
+        blurred_splash = blurred_splash.filter(ImageFilter.GaussianBlur(radius=30))
         
-        # دمج التضبيب مع اللون الداكن المشتق
-        bg_final = Image.blend(bg_base, blurred_splash, 0.35)
+        # زيادة نسبة دمج السبلاش آرت الفعلي لـ 55% لإبراز الألوان والجمالية الفنية للخلفية
+        bg_final = Image.blend(bg_base, blurred_splash, 0.55)
         card.paste(bg_final, (0, 0))
 
-        # معالجة لون التمييز الحيوي (Highlight Color) ليتطابق مع ثيم الشخصية بشكل مشع وجميل
+        # معالجة لون التمييز المشتق المشع
         max_c = max(r, g, b, 1)
         highlight_r = int((r / max_c) * 255)
         highlight_g = int((g / max_c) * 255)
         highlight_b = int((b / max_c) * 255)
         
-        # تقريب اللون الحيوي من الأبيض بنسبة 25% ليكون مشعاً ومقروءاً بوضوح ممتاز
+        # تفتيح درجة اللون المميز برمجياً لتظهر زاهية جداً ومشرقة فوق الخلفية الملونة
         highlight_color = (
             int(highlight_r * 0.75 + 255 * 0.25),
             int(highlight_g * 0.75 + 255 * 0.25),
@@ -183,7 +225,7 @@ async def create_character_card(client, char_data, player_data):
             255
         )
         
-        # اشتقاق لون النصوص الفرعية الجانبية
+        # لون العناوين الفرعية والنصوص الجانبية
         subtitle_color = (
             int(highlight_r * 0.5 + 255 * 0.2),
             int(highlight_g * 0.5 + 255 * 0.2),
@@ -193,8 +235,8 @@ async def create_character_card(client, char_data, player_data):
     else:
         card.paste(Image.new("RGBA", (1600, 800), bg_color), (0, 0))
 
-    # طبقة تعتيم ناعمة وشبه شفافة على كامل البطاقة
-    tint = Image.new("RGBA", (1600, 800), (8, 10, 16, 130))
+    # تخفيف عتامة الطبقة الداكنة (Alpha 95 بدلاً من 130) لجعل الكارد مضيئاً وأكثر إشراقاً
+    tint = Image.new("RGBA", (1600, 800), (8, 10, 16, 95))
     card = Image.alpha_composite(card, tint)
     draw = ImageDraw.Draw(card)
 
@@ -255,10 +297,10 @@ async def create_character_card(client, char_data, player_data):
     gradient_styled = mask_rounded_fade(gradient, radius=24, fade_width=80)
     card.paste(gradient_styled, (40, 760 - grad_h), gradient_styled)
     
-    # تفاصيل الشخصية والاسم
+    # تفاصيل الشخصية والاسم بمقاسات خط ممتازة
     name_y = 570
     draw_shadow_text(draw, (75, name_y), char_name.upper(), font_large, highlight_color)
-    draw_shadow_text(draw, (75, name_y + 34), f"LEVEL {char_level} / 80", font_bold, (220, 225, 235, 255))
+    draw_shadow_text(draw, (75, name_y + 38), f"LEVEL {char_level} / 80", font_bold, (220, 225, 235, 255))
     
     # معلومات الحساب بالأسفل
     p_name = player_data.get("nickname", "Unknown")
@@ -266,9 +308,9 @@ async def create_character_card(client, char_data, player_data):
     p_level = player_data.get("level", "-")
     p_eq = player_data.get("world_level", "-")
     
-    info_y = name_y + 75
+    info_y = name_y + 80
     draw_shadow_text(draw, (75, info_y), f"{p_name}  •  UID {p_uid}", font_bold, (255, 255, 255, 255))
-    draw_shadow_text(draw, (75, info_y + 22), f"Trailblaze Lv. {p_level}   |   Equilibrium Lv. {p_eq}", font_small, subtitle_color)
+    draw_shadow_text(draw, (75, info_y + 24), f"Trailblaze Lv. {p_level}   |   Equilibrium Lv. {p_eq}", font_small, subtitle_color)
 
 
     # ==================== القسم الثاني (الوسط اليسار): الآثار والمهارات والسلاح (طافية) ====================
@@ -288,23 +330,23 @@ async def create_character_card(client, char_data, player_data):
                 card.paste(sk_img, (510, skill_y), sk_img)
                 
         draw_shadow_text(draw, (555, skill_y - 2), sk_name[:20], font_bold, (255, 255, 255, 255))
-        draw_shadow_text(draw, (555, skill_y + 16), f"{sk_type}  •  Lv. {sk_level}/{sk_max}", font_small, subtitle_color)
+        draw_shadow_text(draw, (555, skill_y + 18), f"{sk_type}  •  Lv. {sk_level}/{sk_max}", font_small, subtitle_color)
         
-        skill_y += 62
+        skill_y += 70  # زيادة التباعد ليتناسب مع حجم الخط الكبير
 
     # السلاح (Light Cone) طافٍ بدون صناديق خلفية
-    lc_y = 390
+    lc_y = 420
     if lc_icon:
         lc_img = await get_cached_icon(client, lc_icon, (75, 75))
         if lc_img:
             card.paste(lc_img, (510, lc_y), lc_img)
             
     draw_shadow_text(draw, (595, lc_y), f"{lc_name[:22]}", font_bold, (255, 255, 255, 255))
-    draw_shadow_text(draw, (595, lc_y + 24), f"Lv. {lc_level} / 80", font_sub, highlight_color)
+    draw_shadow_text(draw, (595, lc_y + 26), f"Lv. {lc_level} / 80", font_sub, highlight_color)
     
     # عرض إحصائيات السلاح الأساسية
     lc_attrs = equip.get("attributes", []) or []
-    lc_stat_y = 480
+    lc_stat_y = 505
     for attr in lc_attrs[:3]:
         a_name = attr.get("name", "")
         a_val = attr.get("display", str(attr.get("value", "")))
@@ -317,7 +359,7 @@ async def create_character_card(client, char_data, player_data):
                 
         draw_shadow_text(draw, (540, lc_stat_y + 1), f"Base {a_name}:", font_small, subtitle_color)
         draw_shadow_text(draw, (720, lc_stat_y + 1), str(a_val), font_small, (255, 255, 255, 255))
-        lc_stat_y += 26
+        lc_stat_y += 28
 
 
     # ==================== القسم الثالث (الوسط اليمين): الإحصائيات النشطة وتأثير المجموعات (طافية) ====================
@@ -337,14 +379,14 @@ async def create_character_card(client, char_data, player_data):
         try:
             val_width = draw.textlength(s_val, font=font_bold)
         except AttributeError:
-            val_width = len(s_val) * 8
+            val_width = len(s_val) * 8.5
         draw_shadow_text(draw, (1180 - val_width, stat_y + 3), s_val, font_bold, highlight_color)
         
-        stat_y += 42
+        stat_y += 44  # زيادة المسافة الرأسية بين الإحصائيات لتلافي التداخل
 
     # تأثير المجموعات (Set Effects) طافٍ
     relic_sets = char_data.get("relic_sets", [])
-    set_y = 410
+    set_y = 425
     for r_set in relic_sets[:2]:
         s_name = r_set.get("name", "Unknown Set")
         s_num = r_set.get("num", 2)
@@ -352,7 +394,7 @@ async def create_character_card(client, char_data, player_data):
         clean_desc = re.sub(r'<[^>]+>', '', str(raw_desc)).replace("\n", " ")
         
         draw_shadow_text(draw, (870, set_y), f"[{s_num}-Pc] {s_name}", font_bold, highlight_color)
-        set_y += 18
+        set_y += 20
         
         words = clean_desc.split(" ")
         line = ""
@@ -363,20 +405,20 @@ async def create_character_card(client, char_data, player_data):
             except AttributeError:
                 text_width = len(test_line) * 6
                 
-            if text_width < 310:
+            if text_width < 290:  # تضييق العرض نسبياً لاستيعاب الخط الأكبر
                 line = test_line
             else:
                 draw_shadow_text(draw, (870, set_y), line, font_small, (180, 195, 215, 255))
-                set_y += 14
+                set_y += 16
                 line = word + " "
         if line:
             draw_shadow_text(draw, (870, set_y), line, font_small, (180, 195, 215, 255))
-            set_y += 22
+            set_y += 24
 
 
     # ==================== القسم الرابع (أقصى اليمين): قطع الريليكس الستة (طافية وسلسة) ====================
     for idx, r in enumerate(relics[:6]):
-        box_y1 = 50 + (idx * 116)
+        box_y1 = 50 + (idx * 118)  # موازنة المسافات العمودية لتناسب الخطوط الكبيرة
         box_x1 = 1230
         box_x2 = 1560
         
@@ -389,7 +431,8 @@ async def create_character_card(client, char_data, player_data):
             if r_img:
                 card.paste(r_img, (box_x1, box_y1 + 8), r_img)
                 
-        draw_shadow_text(draw, (box_x1 + 60, box_y1 + 12), f"{r_name[:16]}", font_bold, (230, 235, 245, 255))
+        # اقتصاص أسماء الريليكس لـ 14 حرفاً لتجنب التداخل مع مستوى الريليك
+        draw_shadow_text(draw, (box_x1 + 60, box_y1 + 12), f"{r_name[:14]}", font_bold, (230, 235, 245, 255))
         draw_shadow_text(draw, (box_x2 - 38, box_y1 + 12), f"+{r_lvl}", font_bold, highlight_color)
         
         main_stat = r.get("main_affix", {}) or r.get("mainstat", {})
@@ -399,7 +442,7 @@ async def create_character_card(client, char_data, player_data):
             m_display = format_stat_value(m_name, main_stat.get("value", ""), is_planar=(idx in [4, 5]))
             
         if m_name:
-            draw_shadow_text(draw, (box_x1 + 60, box_y1 + 32), f"Main: {m_name} ({m_display})", font_small, subtitle_color)
+            draw_shadow_text(draw, (box_x1 + 60, box_y1 + 34), f"Main: {m_name} ({m_display})", font_small, subtitle_color)
             
         substats = r.get("sub_affix", []) or r.get("sub_affix_list", []) or r.get("substats", [])
         for i, sub in enumerate(substats[:4]):
@@ -413,7 +456,7 @@ async def create_character_card(client, char_data, player_data):
                 stat_text = f"{short_name}: {s_display}"
                 
                 sub_col_x = box_x1 + 60 if i % 2 == 0 else box_x1 + 175
-                sub_row_y = box_y1 + 56 if i < 2 else box_y1 + 78
+                sub_row_y = box_y1 + 58 if i < 2 else box_y1 + 82
                 draw_shadow_text(draw, (sub_col_x, sub_row_y), stat_text, font_small, (220, 225, 235, 255))
 
     buf = BytesIO()
