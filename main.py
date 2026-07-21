@@ -4,7 +4,7 @@ import httpx
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -57,22 +57,37 @@ def format_stat_value(name, val, is_planar=False):
     except Exception:
         return str(val)
 
-# دالة ذكية لقص الصور بأطراف دائرية لتلائم واجهة الزجاج المقاوم للكسر
-def mask_rounded(img, radius):
-    mask = Image.new("L", img.size, 0)
-    mask_draw = ImageDraw.Draw(mask)
-    mask_draw.rounded_rectangle([0, 0, img.size[0], img.size[1]], radius=radius, fill=255)
+# دالة قص متطورة لدمج صورة الشخصية بسلاسة متناهية مع الخلفية عن طريق تلاشي الحواف اليمنى ودوران الزوايا الأخرى
+def mask_rounded_fade(img, radius=24, fade_width=80):
+    w, h = img.size
+    # قناع تلاشي أفقي للحافة اليمنى
+    mask = Image.new("L", (w, h), 255)
+    gradient = Image.new("L", (fade_width, 1))
+    grad_draw = ImageDraw.Draw(gradient)
+    for x in range(fade_width):
+        grad_draw.point((x, 0), fill=int(255 * (1 - x / fade_width)))
+    gradient = gradient.resize((fade_width, h), Image.Resampling.BILINEAR)
+    mask.paste(gradient, (w - fade_width, 0))
+    
+    # قناع دوران الحواف بقية الزوايا
+    rounded_mask = Image.new("L", (w, h), 0)
+    rounded_draw = ImageDraw.Draw(rounded_mask)
+    rounded_draw.rounded_rectangle([0, 0, w, h], radius=radius, fill=255)
+    
+    # دمج الأقنعة لإنشاء حافة تلاشي انسيابية دائرية
+    final_mask = ImageChops.multiply(mask, rounded_mask)
+    
     rounded_img = Image.new("RGBA", img.size)
-    rounded_img.paste(img, (0, 0), mask)
+    rounded_img.paste(img, (0, 0), final_mask)
     return rounded_img
 
-# دالة رسم النصوص مع ظلال ناعمة لإبراز الكلمات وزيادة عمق التصميم
-def draw_shadow_text(draw, position, text, font, fill, shadow_fill=(0, 0, 0, 240), offset=(1.5, 1.5)):
+# دالة رسم النصوص بظلال ناعمة ودقيقة لزيادة وضوح الحروف فوق أي لون خلفية
+def draw_shadow_text(draw, position, text, font, fill, shadow_fill=(0, 0, 0, 255), offset=(2, 2)):
     x, y = position
     draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow_fill)
     draw.text((x, y), text, font=font, fill=fill)
 
-# ذاكرة تخزين مؤقت للأيقونات لتسريع البناء
+# ذاكرة التخزين المؤقت للأيقونات
 icon_cache = {}
 
 async def get_cached_icon(client, icon_path, size=None):
@@ -91,7 +106,7 @@ async def get_cached_icon(client, icon_path, size=None):
         return img
     return None
 
-# --- دالة رسم بطاقة الشخصية الحديثة الزجاجية والموحدة ---
+# --- دالة رسم بطاقة الشخصية الزجاجية المتصلة ---
 async def create_character_card(client, char_data, player_data):
     char_name = char_data.get("name", "Character")
     char_level = char_data.get("level", 1)
@@ -118,7 +133,7 @@ async def create_character_card(client, char_data, player_data):
     except Exception:
         font_large = font_title = font_bold = font_sub = font_small = ImageFont.load_default()
 
-    # جلب صورة السبلاش آرت لاستخدامها كخلفية وللعرض الأساسي
+    # جلب صورة السبلاش آرت مسبقاً لاستخراج الألوان وعرضها
     splash_img = None
     if char_id:
         portrait_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/image/character_portrait/{char_id}.png"
@@ -129,35 +144,61 @@ async def create_character_card(client, char_data, player_data):
         img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{splash_icon}"
         splash_img = await fetch_image(client, img_url)
 
-    # 1. تحليل الصورة واستخراج اللون المسيطر لصناعة خلفية حية
+    # الألوان الافتراضية للبطاقة في حال تعذر الحصول على الصورة
+    highlight_color = (255, 215, 100, 255)
+    subtitle_color = (150, 200, 255, 255)
+    bg_color = (10, 12, 18, 255)
+
+    # 1. تحليل الصورة واستخراج الألوان برمجياً بنسبة 100% لانسجام تام
     if splash_img:
         resample_filter = getattr(Image, "Resampling", None)
         box_filter = resample_filter.BOX if resample_filter else getattr(Image, "BOX", Image.NEAREST)
         tiny_img = splash_img.resize((1, 1), box_filter)
         avg_pixel = tiny_img.getpixel((0, 0))
-        r, g, b = avg_pixel[0], avg_pixel[1], avg_pixel[2]
+        r, g, b = int(avg_pixel[0]), int(avg_pixel[1]), int(avg_pixel[2])
         
-        # استخراج اللون وحساب درجة تشبعه ثم خفض سطوعه لتباين ممتاز
-        max_val = max(r, g, b, 1)
-        nr, ng, nb = r / max_val, g / max_val, b / max_val
-        bg_color = (int(nr * 35), int(ng * 35), int(nb * 35), 255)
+        # اشتقاق لون خلفية داكن بنسبة 8% من اللون الأصلي
+        bg_color = (int(r * 0.08), int(g * 0.08), int(b * 0.08), 255)
         bg_base = Image.new("RGBA", (1600, 800), bg_color)
         
-        # تضبيب الخلفية بنعومة عالية (Glow Blur Effect)
+        # تضبيب عميق ومكبر للخلفية من السبلاش آرت
         blurred_splash = resize_cover(splash_img, 1600, 800, focus_y=0.2)
         blurred_splash = blurred_splash.filter(ImageFilter.GaussianBlur(radius=50))
         
+        # دمج التضبيب مع اللون الداكن المشتق
         bg_final = Image.blend(bg_base, blurred_splash, 0.35)
         card.paste(bg_final, (0, 0))
-    else:
-        card.paste(Image.new("RGBA", (1600, 800), (12, 15, 23, 255)), (0, 0))
 
-    # طبقة تباين زجاجية داكنة إضافية لضمان عمق الألوان وحيوية التفاصيل
-    tint = Image.new("RGBA", (1600, 800), (10, 12, 18, 120))
+        # معالجة لون التمييز الحيوي (Highlight Color) ليتطابق مع ثيم الشخصية بشكل مشع وجميل
+        max_c = max(r, g, b, 1)
+        highlight_r = int((r / max_c) * 255)
+        highlight_g = int((g / max_c) * 255)
+        highlight_b = int((b / max_c) * 255)
+        
+        # تقريب اللون الحيوي من الأبيض بنسبة 25% ليكون مشعاً ومقروءاً بوضوح ممتاز
+        highlight_color = (
+            int(highlight_r * 0.75 + 255 * 0.25),
+            int(highlight_g * 0.75 + 255 * 0.25),
+            int(highlight_b * 0.75 + 255 * 0.25),
+            255
+        )
+        
+        # اشتقاق لون النصوص الفرعية الجانبية
+        subtitle_color = (
+            int(highlight_r * 0.5 + 255 * 0.2),
+            int(highlight_g * 0.5 + 255 * 0.2),
+            int(highlight_b * 0.5 + 255 * 0.2),
+            255
+        )
+    else:
+        card.paste(Image.new("RGBA", (1600, 800), bg_color), (0, 0))
+
+    # طبقة تعتيم ناعمة وشبه شفافة على كامل البطاقة
+    tint = Image.new("RGBA", (1600, 800), (8, 10, 16, 130))
     card = Image.alpha_composite(card, tint)
     draw = ImageDraw.Draw(card)
 
-    # تحضير الستات للشخصية
+    # تحضير الإحصائيات للشخصية
     all_stats = {}
     for stat in char_data.get("attributes", []) + char_data.get("properties", []):
         field = stat.get("field", "")
@@ -196,14 +237,14 @@ async def create_character_card(client, char_data, player_data):
                 seen_fields.add(field)
 
 
-    # ==================== القسم الأول (أقصى اليسار): السبلاش آرت بأطراف دائرية ====================
+    # ==================== القسم الأول (أقصى اليسار): السبلاش آرت الدائري المتلاشي بسلاسة ====================
     if splash_img:
         splash_crop = resize_cover(splash_img, 440, 720, focus_y=0.12)
-        # تحويل الأطراف إلى دائرية ناعمة لتناسب المظهر الزجاجي الحديث
-        splash_rounded = mask_rounded(splash_crop, radius=20)
-        card.paste(splash_rounded, (40, 40), splash_rounded)
+        # دمج أطراف دائرية مع تلاشي تدريجي للحافة اليمنى للاندماج مع الخلفية
+        splash_styled = mask_rounded_fade(splash_crop, radius=24, fade_width=80)
+        card.paste(splash_styled, (40, 40), splash_styled)
         
-    # تدرج غامق مدمج ناعم داخل إطار الصورة الدائري
+    # تدرج غامق تحت الاسم لحماية النصوص
     grad_h = 300
     gradient = Image.new("RGBA", (440, grad_h), (0, 0, 0, 0))
     grad_draw = ImageDraw.Draw(gradient)
@@ -211,33 +252,29 @@ async def create_character_card(client, char_data, player_data):
         t = gy / grad_h
         alpha = int(245 * (t ** 1.6))
         grad_draw.line([(0, gy), (440, gy)], fill=(8, 10, 16, alpha))
-    gradient_rounded = mask_rounded(gradient, radius=20)
-    card.paste(gradient_rounded, (40, 760 - grad_h), gradient_rounded)
+    gradient_styled = mask_rounded_fade(gradient, radius=24, fade_width=80)
+    card.paste(gradient_styled, (40, 760 - grad_h), gradient_styled)
     
-    # تفاصيل الشخصية فوق التدرج الداكن
+    # تفاصيل الشخصية والاسم
     name_y = 570
-    draw_shadow_text(draw, (75, name_y), char_name.upper(), font_large, (255, 215, 100, 255))
+    draw_shadow_text(draw, (75, name_y), char_name.upper(), font_large, highlight_color)
     draw_shadow_text(draw, (75, name_y + 34), f"LEVEL {char_level} / 80", font_bold, (220, 225, 235, 255))
     
-    draw.line([(75, name_y + 60), (445, name_y + 60)], fill=(255, 255, 255, 40), width=1)
-    
+    # معلومات الحساب بالأسفل
     p_name = player_data.get("nickname", "Unknown")
     p_uid = player_data.get("uid", "-")
     p_level = player_data.get("level", "-")
     p_eq = player_data.get("world_level", "-")
     
-    info_y = name_y + 70
+    info_y = name_y + 75
     draw_shadow_text(draw, (75, info_y), f"{p_name}  •  UID {p_uid}", font_bold, (255, 255, 255, 255))
-    draw_shadow_text(draw, (75, info_y + 22), f"Trailblaze Lv. {p_level}   |   Equilibrium Lv. {p_eq}", font_small, (200, 210, 230, 255))
+    draw_shadow_text(draw, (75, info_y + 22), f"Trailblaze Lv. {p_level}   |   Equilibrium Lv. {p_eq}", font_small, subtitle_color)
 
 
-    # ==================== القسم الثاني (الوسط اليسار): الآثار والمهارات والسلاح زجاجي ====================
-    # اللوحة الخلفية الزجاجية مع توهج الحواف (Glassmorphic Card Panel)
-    draw.rounded_rectangle([510, 40, 840, 760], radius=20, fill=(12, 15, 23, 130), outline=(255, 255, 255, 15), width=1)
-    
-    # المهارات والآثار
+    # ==================== القسم الثاني (الوسط اليسار): الآثار والمهارات والسلاح (طافية) ====================
+    # المهارات والآثار (Traces)
     skills = char_data.get("skills", []) or []
-    skill_y = 55
+    skill_y = 50
     for skill in skills[:5]:
         sk_name = skill.get("name", "Skill")
         sk_level = skill.get("level", 1)
@@ -248,27 +285,26 @@ async def create_character_card(client, char_data, player_data):
         if sk_icon:
             sk_img = await get_cached_icon(client, sk_icon, (34, 34))
             if sk_img:
-                card.paste(sk_img, (530, skill_y), sk_img)
+                card.paste(sk_img, (510, skill_y), sk_img)
                 
-        draw_shadow_text(draw, (575, skill_y - 2), sk_name[:20], font_bold, (255, 255, 255, 255))
-        draw_shadow_text(draw, (575, skill_y + 16), f"{sk_type}  •  Lv. {sk_level}/{sk_max}", font_small, (150, 200, 255, 255))
+        draw_shadow_text(draw, (555, skill_y - 2), sk_name[:20], font_bold, (255, 255, 255, 255))
+        draw_shadow_text(draw, (555, skill_y + 16), f"{sk_type}  •  Lv. {sk_level}/{sk_max}", font_small, subtitle_color)
         
-        skill_y += 65
-        
-    # السلاح (موضوع داخل صندوق زجاجي داخلي لعمق أكبر)
-    lc_y = 410
-    draw.rounded_rectangle([525, lc_y - 15, 825, 745], radius=14, fill=(255, 255, 255, 10))
-    
+        skill_y += 62
+
+    # السلاح (Light Cone) طافٍ بدون صناديق خلفية
+    lc_y = 390
     if lc_icon:
         lc_img = await get_cached_icon(client, lc_icon, (75, 75))
         if lc_img:
-            card.paste(lc_img, (540, lc_y), lc_img)
+            card.paste(lc_img, (510, lc_y), lc_img)
             
-    draw_shadow_text(draw, (625, lc_y), f"{lc_name[:22]}", font_bold, (255, 255, 255, 255))
-    draw_shadow_text(draw, (625, lc_y + 24), f"Lv. {lc_level} / 80", font_sub, (150, 220, 150, 255))
+    draw_shadow_text(draw, (595, lc_y), f"{lc_name[:22]}", font_bold, (255, 255, 255, 255))
+    draw_shadow_text(draw, (595, lc_y + 24), f"Lv. {lc_level} / 80", font_sub, highlight_color)
     
+    # عرض إحصائيات السلاح الأساسية
     lc_attrs = equip.get("attributes", []) or []
-    lc_stat_y = 490
+    lc_stat_y = 480
     for attr in lc_attrs[:3]:
         a_name = attr.get("name", "")
         a_val = attr.get("display", str(attr.get("value", "")))
@@ -277,18 +313,15 @@ async def create_character_card(client, char_data, player_data):
         if a_icon:
             a_img = await get_cached_icon(client, a_icon, (20, 20))
             if a_img:
-                card.paste(a_img, (540, lc_stat_y), a_img)
+                card.paste(a_img, (510, lc_stat_y), a_img)
                 
-        draw_shadow_text(draw, (565, lc_stat_y + 1), f"Base {a_name}:", font_small, (170, 185, 205, 255))
-        draw_shadow_text(draw, (740, lc_stat_y + 1), str(a_val), font_small, (255, 255, 255, 255))
+        draw_shadow_text(draw, (540, lc_stat_y + 1), f"Base {a_name}:", font_small, subtitle_color)
+        draw_shadow_text(draw, (720, lc_stat_y + 1), str(a_val), font_small, (255, 255, 255, 255))
         lc_stat_y += 26
 
 
-    # ==================== القسم الثالث (الوسط اليمين): الإحصائيات النشطة وتأثير المجموعات ====================
-    # لوحة زجاجية للقسم الثالث
-    draw.rounded_rectangle([870, 40, 1200, 760], radius=20, fill=(12, 15, 23, 130), outline=(255, 255, 255, 15), width=1)
-    
-    stat_y = 55
+    # ==================== القسم الثالث (الوسط اليمين): الإحصائيات النشطة وتأثير المجموعات (طافية) ====================
+    stat_y = 50
     for stat in rendered_stats[:8]:
         s_name = stat["name"]
         s_val = stat["value"]
@@ -297,31 +330,28 @@ async def create_character_card(client, char_data, player_data):
         if s_icon:
             s_img = await get_cached_icon(client, s_icon, (24, 24))
             if s_img:
-                card.paste(s_img, (890, stat_y), s_img)
+                card.paste(s_img, (870, stat_y), s_img)
                 
-        draw_shadow_text(draw, (925, stat_y + 3), s_name, font_bold, (200, 210, 230, 255))
+        draw_shadow_text(draw, (905, stat_y + 3), s_name, font_bold, (200, 210, 230, 255))
         
         try:
             val_width = draw.textlength(s_val, font=font_bold)
         except AttributeError:
             val_width = len(s_val) * 8
-        draw_shadow_text(draw, (1180 - val_width, stat_y + 3), s_val, font_bold, (255, 215, 100, 255))
+        draw_shadow_text(draw, (1180 - val_width, stat_y + 3), s_val, font_bold, highlight_color)
         
-        draw.line([(890, stat_y + 35), (1180, stat_y + 35)], fill=(255, 255, 255, 15), width=1)
         stat_y += 42
-        
-    # صندوق تأثير المجموعات (Set Effects) زجاجي مدمج في الأسفل
-    draw.rounded_rectangle([885, 405, 1185, 745], radius=14, fill=(255, 255, 255, 10))
-    
+
+    # تأثير المجموعات (Set Effects) طافٍ
     relic_sets = char_data.get("relic_sets", [])
-    set_y = 425
+    set_y = 410
     for r_set in relic_sets[:2]:
         s_name = r_set.get("name", "Unknown Set")
         s_num = r_set.get("num", 2)
         raw_desc = r_set.get("desc", "")
         clean_desc = re.sub(r'<[^>]+>', '', str(raw_desc)).replace("\n", " ")
         
-        draw_shadow_text(draw, (900, set_y), f"[{s_num}-Pc] {s_name}", font_bold, (100, 230, 150, 255))
+        draw_shadow_text(draw, (870, set_y), f"[{s_num}-Pc] {s_name}", font_bold, highlight_color)
         set_y += 18
         
         words = clean_desc.split(" ")
@@ -333,29 +363,22 @@ async def create_character_card(client, char_data, player_data):
             except AttributeError:
                 text_width = len(test_line) * 6
                 
-            if text_width < 260:
+            if text_width < 310:
                 line = test_line
             else:
-                draw_shadow_text(draw, (900, set_y), line, font_small, (180, 195, 215, 255))
+                draw_shadow_text(draw, (870, set_y), line, font_small, (180, 195, 215, 255))
                 set_y += 14
                 line = word + " "
         if line:
-            draw_shadow_text(draw, (900, set_y), line, font_small, (180, 195, 215, 255))
-            set_y += 20
+            draw_shadow_text(draw, (870, set_y), line, font_small, (180, 195, 215, 255))
+            set_y += 22
 
 
-    # ==================== القسم الرابع (أقصى اليمين): الريليكس الستة ====================
-    # لوحة زجاجية للقسم الرابع
-    draw.rounded_rectangle([1230, 40, 1560, 760], radius=20, fill=(12, 15, 23, 130), outline=(255, 255, 255, 15), width=1)
-    
+    # ==================== القسم الرابع (أقصى اليمين): قطع الريليكس الستة (طافية وسلسة) ====================
     for idx, r in enumerate(relics[:6]):
         box_y1 = 50 + (idx * 116)
-        box_y2 = box_y1 + 108
-        box_x1 = 1242
-        box_x2 = 1548
-        
-        # لوحات زجاجية مصغرة لكل قطعة ريليك لمزيد من البعد والعمق الفني (Depth)
-        draw.rounded_rectangle([box_x1, box_y1, box_x2, box_y2], radius=12, fill=(255, 255, 255, 12))
+        box_x1 = 1230
+        box_x2 = 1560
         
         r_name = r.get("name", f"Relic #{idx+1}")
         r_lvl = r.get("level", 0)
@@ -364,10 +387,10 @@ async def create_character_card(client, char_data, player_data):
         if r_icon:
             r_img = await get_cached_icon(client, r_icon, (52, 52))
             if r_img:
-                card.paste(r_img, (box_x1 + 8, box_y1 + 8), r_img)
+                card.paste(r_img, (box_x1, box_y1 + 8), r_img)
                 
-        draw_shadow_text(draw, (box_x1 + 65, box_y1 + 12), f"{r_name[:16]}", font_bold, (230, 235, 245, 255))
-        draw_shadow_text(draw, (box_x2 - 38, box_y1 + 12), f"+{r_lvl}", font_bold, (100, 230, 150, 255))
+        draw_shadow_text(draw, (box_x1 + 60, box_y1 + 12), f"{r_name[:16]}", font_bold, (230, 235, 245, 255))
+        draw_shadow_text(draw, (box_x2 - 38, box_y1 + 12), f"+{r_lvl}", font_bold, highlight_color)
         
         main_stat = r.get("main_affix", {}) or r.get("mainstat", {})
         m_name = main_stat.get("name", "") or main_stat.get("type", "")
@@ -376,7 +399,7 @@ async def create_character_card(client, char_data, player_data):
             m_display = format_stat_value(m_name, main_stat.get("value", ""), is_planar=(idx in [4, 5]))
             
         if m_name:
-            draw_shadow_text(draw, (box_x1 + 65, box_y1 + 32), f"Main: {m_name} ({m_display})", font_small, (255, 215, 100, 255))
+            draw_shadow_text(draw, (box_x1 + 60, box_y1 + 32), f"Main: {m_name} ({m_display})", font_small, subtitle_color)
             
         substats = r.get("sub_affix", []) or r.get("sub_affix_list", []) or r.get("substats", [])
         for i, sub in enumerate(substats[:4]):
@@ -389,9 +412,9 @@ async def create_character_card(client, char_data, player_data):
                 short_name = str(s_name).replace("_", " ")[:10]
                 stat_text = f"{short_name}: {s_display}"
                 
-                sub_col_x = box_x1 + 65 if i % 2 == 0 else box_x1 + 180
+                sub_col_x = box_x1 + 60 if i % 2 == 0 else box_x1 + 175
                 sub_row_y = box_y1 + 56 if i < 2 else box_y1 + 78
-                draw_shadow_text(draw, (sub_col_x, sub_row_y), stat_text, font_small, (170, 185, 205, 255))
+                draw_shadow_text(draw, (sub_col_x, sub_row_y), stat_text, font_small, (220, 225, 235, 255))
 
     buf = BytesIO()
     card.save(buf, format="PNG")
