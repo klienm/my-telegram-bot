@@ -3,6 +3,7 @@ import re
 import math
 import httpx
 import urllib.request
+import tempfile
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 from io import BytesIO
@@ -48,12 +49,38 @@ def resize_cover(img, target_w, target_h):
 FONT_BOLD_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Bold.ttf"
 FONT_REG_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Medium.ttf"
 
-LOCAL_BOLD_PATH = "Montserrat-Bold.ttf"
-LOCAL_REG_PATH = "Montserrat-Medium.ttf"
+# استخدام مجلد مؤقت آمن لضمان القدرة على الكتابة في البيئات السحابية المغلقة
+temp_dir = tempfile.gettempdir()
+LOCAL_BOLD_PATH = os.path.join(temp_dir, "Montserrat-Bold.ttf")
+LOCAL_REG_PATH = os.path.join(temp_dir, "Montserrat-Medium.ttf")
+
+def download_fonts_on_startup():
+    """
+    تحميل خطوط Montserrat المتجهية وحفظها في مجلد النظام المؤقت فور إقلاع البوت.
+    هذا الإجراء يضمن عدم اعتماد البوت على خطوط النظام الافتراضية المشوهة نهائياً.
+    """
+    if not os.path.exists(LOCAL_BOLD_PATH):
+        print("⏳ Startup: Downloading Montserrat-Bold font for high-resolution text...")
+        try:
+            r = httpx.get(FONT_BOLD_URL, follow_redirects=True, timeout=15)
+            with open(LOCAL_BOLD_PATH, "wb") as f:
+                f.write(r.content)
+            print("✅ Montserrat-Bold downloaded successfully.")
+        except Exception as e:
+            print(f"❌ Failed to download bold font: {e}")
+
+    if not os.path.exists(LOCAL_REG_PATH):
+        print("⏳ Startup: Downloading Montserrat-Medium font for high-resolution text...")
+        try:
+            r = httpx.get(FONT_REG_URL, follow_redirects=True, timeout=15)
+            with open(LOCAL_REG_PATH, "wb") as f:
+                f.write(r.content)
+            print("✅ Montserrat-Medium downloaded successfully.")
+        except Exception as e:
+            print(f"❌ Failed to download regular font: {e}")
 
 def get_sharp_font(size, bold=True):
     local_path = LOCAL_BOLD_PATH if bold else LOCAL_REG_PATH
-    fallback_url = FONT_BOLD_URL if bold else FONT_REG_URL
     
     if os.path.exists(local_path):
         try:
@@ -61,12 +88,19 @@ def get_sharp_font(size, bold=True):
         except Exception:
             pass
             
-    try:
-        urllib.request.urlretrieve(fallback_url, local_path)
-        return ImageFont.truetype(local_path, size)
-    except Exception as e:
-        print(f"⚠️ Font download failed: {e}")
-        return ImageFont.load_default()
+    # التحقق من وجود الخطوط بمسارات نظام لينكس البديلة
+    sys_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans.ttf"
+    ]
+    for path in sys_paths:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                pass
+                
+    return ImageFont.load_default()
 
 icon_cache = {}
 async def get_cached_icon(client, icon_path, size=None):
@@ -97,7 +131,7 @@ def get_dominant_color(img):
 
 # --- دالة رسم البطاقة (خطوط عملاقة، أيقونات بارزة، بدون بوكسات ريليكس وبدون أخطاء) ---
 async def create_character_card(client, char_data, player_data):
-    SCALE = 2  # دقة مضاعفة للتنعيم الخارق
+    SCALE = 2  # دقة مضاعفة للتنعيم الخارق ورسم التفاصيل بجودة فائقة
     
     char_name = char_data.get("name", "Character")
     char_level = char_data.get("level", 1)
@@ -153,10 +187,12 @@ async def create_character_card(client, char_data, player_data):
 
     if splash_img:
         dom_r, dom_g, dom_b = get_dominant_color(splash_img)
-        text_highlight = (min(255, dom_r + 100), min(255, dom_g + 100), min(255, dom_b + 100), 255)
+        # زيادة التفتيح للتدرج اللوني المشع لزيادة الوضوح والقوة
+        text_highlight = (min(255, dom_r + 140), min(255, dom_g + 140), min(255, dom_b + 140), 255)
         
         bg_blur = resize_cover(splash_img, 1600 * SCALE, 800 * SCALE).filter(ImageFilter.GaussianBlur(130))
-        tint = Image.new("RGBA", (1600 * SCALE, 800 * SCALE), (dom_r // 6, dom_g // 6, dom_b // 6, 170))
+        # جعل التظليل أفتح بنسبة بسيطة (140 بدلاً من 170) لإبراز تفاصيل وألوان الخلفية
+        tint = Image.new("RGBA", (1600 * SCALE, 800 * SCALE), (dom_r // 7, dom_g // 7, dom_b // 7, 140))
         bg_blur = Image.alpha_composite(bg_blur.convert("RGBA"), tint)
         card.paste(bg_blur, (0, 0))
 
@@ -174,12 +210,12 @@ async def create_character_card(client, char_data, player_data):
 
     draw = ImageDraw.Draw(card)
     
-    # 3. أحجام خطوط عملاقة وواضحة جداً
-    font_large = get_sharp_font(85 * SCALE, bold=True)
-    font_title = get_sharp_font(50 * SCALE, bold=True)
-    font_bold = get_sharp_font(38 * SCALE, bold=True)
-    font_sub = get_sharp_font(32 * SCALE, bold=False)
-    font_small = get_sharp_font(28 * SCALE, bold=False)
+    # 3. أحجام خطوط عملاقة ومقروءة جداً (تم تكبيرها بنسبة كبيرة وحمايتها بـ SCALE)
+    font_large = get_sharp_font(110 * SCALE, bold=True)
+    font_title = get_sharp_font(65 * SCALE, bold=True)
+    font_bold = get_sharp_font(46 * SCALE, bold=True)
+    font_sub = get_sharp_font(38 * SCALE, bold=False)
+    font_small = get_sharp_font(32 * SCALE, bold=False)
 
     # 4. رسم الإيدولونز بألوان متباينة جداً (ذهبي وفحمي)
     rank = char_data.get("rank", 0)
@@ -217,11 +253,11 @@ async def create_character_card(client, char_data, player_data):
     # معلومات الشخصية واللاعب
     name_y = 530 * SCALE
     draw_shadow_text(draw, (40 * SCALE, name_y), char_name.upper(), font_large, (255, 255, 255, 255))
-    draw_shadow_text(draw, (40 * SCALE, name_y + 85 * SCALE), f"LEVEL {char_level} / 80", font_title, text_highlight)
+    draw_shadow_text(draw, (40 * SCALE, name_y + 105 * SCALE), f"LEVEL {char_level} / 80", font_title, text_highlight)
     
     p_name = player_data.get("nickname", "Unknown")
     p_uid = player_data.get("uid", "-")
-    draw_shadow_text(draw, (40 * SCALE, name_y + 145 * SCALE), f"{p_name}  •  UID {p_uid}", font_sub, (255, 255, 255, 255))
+    draw_shadow_text(draw, (40 * SCALE, name_y + 175 * SCALE), f"{p_name}  •  UID {p_uid}", font_sub, (255, 255, 255, 255))
 
     # 5. السلاح (Light Cone) بخطوط كبيرة وواضحة
     equip = char_data.get("light_cone", {})
@@ -247,7 +283,7 @@ async def create_character_card(client, char_data, player_data):
             card.paste(lc_img, (lc_x, lc_y), lc_img)
                 
         draw_shadow_text(draw, (lc_x + 110 * SCALE, lc_y + 2 * SCALE), f"{lc_name[:22]}", font_bold, text_highlight)
-        draw_shadow_text(draw, (lc_x + 110 * SCALE, lc_y + 42 * SCALE), f"Lv. {lc_level}  |  Superimposition {lc_rank}", font_sub, (255, 255, 255, 255))
+        draw_shadow_text(draw, (lc_x + 110 * SCALE, lc_y + 44 * SCALE), f"Lv. {lc_level}  |  Superimposition {lc_rank}", font_sub, (255, 255, 255, 255))
         
         lc_props = equip.get("properties", [])
         prop_text = ""
@@ -261,15 +297,15 @@ async def create_character_card(client, char_data, player_data):
         if not prop_text:
             prop_text = "Standard Light Cone Passive Active."
             
-        draw_shadow_text(draw, (lc_x + 110 * SCALE, lc_y + 82 * SCALE), prop_text[:42], font_small, (255, 255, 255, 255))
+        draw_shadow_text(draw, (lc_x + 110 * SCALE, lc_y + 86 * SCALE), prop_text[:42], font_small, (255, 255, 255, 255))
 
-    # 6. المهارات (Traces) بخط كبير
+    # 6. المهارات (Traces) بخط كبير ومسافات متناسقة لمنع التداخل
     skills = char_data.get("skills", [])
     if skills:
-        tr_x, tr_y = 585 * SCALE, 185 * SCALE
+        tr_x, tr_y = 585 * SCALE, 195 * SCALE
         draw_shadow_text(draw, (tr_x, tr_y), "TRACES & ABILITIES", font_bold, text_highlight)
         
-        t_y = tr_y + 44 * SCALE
+        t_y = tr_y + 50 * SCALE
         for skill in skills[:4]:
             sk_name = skill.get("name", "Skill")
             sk_level = skill.get("level", 1)
@@ -283,13 +319,13 @@ async def create_character_card(client, char_data, player_data):
                     
             draw_shadow_text(draw, (tr_x + 55 * SCALE, t_y + 4 * SCALE), sk_name[:16], font_small, (255, 255, 255, 255))
             draw_shadow_text(draw, (tr_x + 330 * SCALE, t_y + 4 * SCALE), f"Lv.{sk_level}/{sk_max}", font_bold, text_highlight)
-            t_y += 42 * SCALE
+            t_y += 48 * SCALE
 
-    # 7. لوحة الإحصائيات (Stats) بخط كبير وواضح
+    # 7. لوحة الإحصائيات (Stats) بخطوط عريضة ومريحة للعين
     stat_start_x, stat_start_y = 585 * SCALE, 395 * SCALE
     draw_shadow_text(draw, (stat_start_x, stat_start_y), "COMBAT STATS", font_bold, text_highlight)
     
-    s_y = stat_start_y + 44 * SCALE
+    s_y = stat_start_y + 50 * SCALE
     for stat in rendered_stats[:7]:
         s_icon = stat["icon"]
         if s_icon:
@@ -305,9 +341,9 @@ async def create_character_card(client, char_data, player_data):
             val_width = len(stat["value"]) * 14 * SCALE
             
         draw_shadow_text(draw, (980 * SCALE - val_width, s_y + 2 * SCALE), stat["value"], font_bold, text_highlight)
-        s_y += 42 * SCALE
+        s_y += 44 * SCALE
 
-    # 8. قطع الريليكس (Relics) بدون بوكسات - بخطوط ضخمة وواضحة (تم إصلاح خطأ اللصق هنا)
+    # 8. قطع الريليكس (Relics) بدون بوكسات - بخطوط ضخمة وواضحة جداً وبدون أخطاء
     relics = char_data.get("relics", []) or char_data.get("relicList", []) or []
     for idx, r in enumerate(relics[:6]):
         box_y = (45 + (idx * 124)) * SCALE
@@ -344,7 +380,7 @@ async def create_character_card(client, char_data, player_data):
             sub_y = box_y + 44 * SCALE if i < 2 else box_y + 78 * SCALE
             draw_shadow_text(draw, (sub_x, sub_y), stat_text, font_small, (255, 255, 255, 255))
 
-    # التنعيم الأخير
+    # التنعيم الأخير لزيادة جودة وحجم الصورة لتبدو خلابة
     card = card.resize((1600, 800), Image.Resampling.LANCZOS)
     card = card.filter(ImageFilter.SHARPEN)
 
@@ -450,6 +486,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_text("❌ حدث خطأ أثناء تجهيز الصورة الفنية.", reply_to_message_id=target_message_id)
 
 def main():
+    # تحميل الخطوط وحفظها مؤقتاً عند بداية تشغيل البوت مباشرة
+    download_fonts_on_startup()
+
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("hsr", hsr_check))
