@@ -101,6 +101,10 @@ LOCAL_BOLD_PATH = "DejaVuSans-Bold.ttf"
 LOCAL_REG_PATH = "DejaVuSans.ttf"
 
 def get_sharp_font(size, bold=True):
+    """
+    تقوم هذه الدالة بفحص مسارات النظام في لينكس وجلب خطوط DejaVuSans المتجهية الفاخرة.
+    في حال غيابها من السيرفر، تقوم بتحميلها وحفظها محلياً لضمان رسم حاد Sharp 100% بدون تشويش.
+    """
     sys_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     sys_reg = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     
@@ -108,18 +112,21 @@ def get_sharp_font(size, bold=True):
     local_path = LOCAL_BOLD_PATH if bold else LOCAL_REG_PATH
     fallback_url = DEJAVU_BOLD_URL if bold else DEJAVU_REG_URL
     
+    # فحص مسار نظام لينكس أولاً
     if os.path.exists(selected_path):
         try:
             return ImageFont.truetype(selected_path, size)
         except Exception:
             pass
             
+    # فحص المجلد المحلي للمشروع ثانياً
     if os.path.exists(local_path):
         try:
             return ImageFont.truetype(local_path, size)
         except Exception:
             pass
             
+    # تحميل الخط برمجياً إذا لم يتوفر على خادم التشغيل
     try:
         print(f"⏳ Font file {local_path} missing. Downloading from source for HD sharp text...")
         urllib.request.urlretrieve(fallback_url, local_path)
@@ -242,7 +249,6 @@ async def create_character_card(client, char_data, player_data):
     draw = ImageDraw.Draw(card)
 
     # 2. رسم لوحات زجاجية متسقة وداكنة خفيفة (خلف النصوص والإحصائيات حصرياً) لزيادة تباين الحروف
-    # الألواح دائرية وبدون أي حدود خارجية حادة لتذوب انسيابياً مع الخلفية
     draw.rounded_rectangle([40, 40, 480, 760], radius=24, fill=(10, 12, 18, 60))    # خلف السبلاش آرت
     draw.rounded_rectangle([500, 30, 840, 770], radius=20, fill=(10, 12, 18, 140))   # خلف المهارات والسلاح
     draw.rounded_rectangle([860, 30, 1210, 770], radius=20, fill=(10, 12, 18, 140))  # خلف الإحصائيات النشطة
@@ -310,10 +316,10 @@ async def create_character_card(client, char_data, player_data):
     if lc_icon:
         lc_img = await get_cached_icon(client, lc_icon, (75, 75))
         if lc_img:
-            card.paste(lc_img, (530, lc_y), lc_img)
+            card.paste(lc_img, (510, lc_y), lc_img)
             
-    draw_shadow_text(draw, (625, lc_y), f"{lc_name[:22]}", font_bold, text_white)
-    draw_shadow_text(draw, (625, lc_y + 26), f"Lv. {lc_level} / 80", font_sub, highlight_color)
+    draw_shadow_text(draw, (595, lc_y), f"{lc_name[:22]}", font_bold, text_white)
+    draw_shadow_text(draw, (595, lc_y + 26), f"Lv. {lc_level} / 80", font_sub, highlight_color)
     
     # عرض إحصائيات السلاح الأساسية
     lc_attrs = equip.get("attributes", []) or []
@@ -326,7 +332,7 @@ async def create_character_card(client, char_data, player_data):
         if a_icon:
             a_img = await get_cached_icon(client, a_icon, (20, 20))
             if a_img:
-                card.paste(a_img, (530, lc_stat_y), a_img)
+                card.paste(a_img, (510, lc_stat_y), a_img)
                 
         draw_shadow_text(draw, (560, lc_stat_y + 1), f"Base {a_name}:", font_small, text_soft)
         draw_shadow_text(draw, (740, lc_stat_y + 1), str(a_val), font_small, text_white)
@@ -392,6 +398,7 @@ async def create_character_card(client, char_data, player_data):
     # ==================== القسم الرابع (أقصى اليمين): قطع الريليكس الستة ====================
     for idx, r in enumerate(relics[:6]):
         box_y1 = 50 + (idx * 118)
+        box_y2 = box_y1 + 108  # تم تصحيح الخطأ البرمجي الفارق هنا بدقة
         box_x1 = 1230
         box_x2 = 1560
         
