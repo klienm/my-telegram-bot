@@ -2,6 +2,7 @@ import os
 import re
 import httpx
 import urllib.request
+import tempfile
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 from io import BytesIO
@@ -85,25 +86,29 @@ def draw_shadow_text(draw, position, text, font, fill, shadow_fill=(0, 0, 0, 255
     draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow_fill)
     draw.text((x, y), text, font=font, fill=fill)
 
-# تحويل كود الـ Hex اللوني إلى RGB
+# تحويل كود الـ Hex اللوني إلى RGB بشكل آمن يفحص القيم الفارغة لتجنب الانهيار المفاجئ للبوت
 def hex_to_rgb(hex_str, default=(255, 215, 100)):
     try:
+        if not hex_str or not isinstance(hex_str, str):
+            return default
         hex_str = hex_str.lstrip('#')
         return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
     except Exception:
         return default
 
-# مسارات وروابط تحميل خطوط DejaVu عريضة وحادة لضمان جودة Figma الاحترافية في بايثون
+# مسارات تحميل خطوط DejaVu عريضة وحادة لضمان جودة Figma الاحترافية في بايثون
 DEJAVU_BOLD_URL = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans-Bold.ttf"
 DEJAVU_REG_URL = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf"
 
-LOCAL_BOLD_PATH = "DejaVuSans-Bold.ttf"
-LOCAL_REG_PATH = "DejaVuSans.ttf"
+# حفظ ملفات الخطوط في المجلد المؤقت للنظام لتجنب مشاكل الصلاحيات والقراءة فقط (Read-only) على خوادم الاستضافة السحابية
+temp_dir = tempfile.gettempdir()
+LOCAL_BOLD_PATH = os.path.join(temp_dir, "DejaVuSans-Bold.ttf")
+LOCAL_REG_PATH = os.path.join(temp_dir, "DejaVuSans.ttf")
 
 def get_sharp_font(size, bold=True):
     """
-    تقوم هذه الدالة بفحص مسارات النظام في لينكس وجلب خطوط DejaVuSans المتجهية الفاخرة.
-    في حال غيابها من السيرفر، تقوم بتحميلها وحفظها محلياً لضمان رسم حاد Sharp 100% بدون تشويش.
+    تتحقق من وجود خطوط DejaVu في النظام أو في المجلد المؤقت.
+    في حال غيابها، تقوم بتحميلها برمجياً مع مهلة اتصال قصيرة لمنع تجميد أو تعليق البوت.
     """
     sys_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     sys_reg = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -119,22 +124,28 @@ def get_sharp_font(size, bold=True):
         except Exception:
             pass
             
-    # فحص المجلد المحلي للمشروع ثانياً
+    # فحص المجلد المحلي المؤقت ثانياً
     if os.path.exists(local_path):
         try:
             return ImageFont.truetype(local_path, size)
         except Exception:
             pass
             
-    # تحميل الخط برمجياً إذا لم يتوفر على خادم التشغيل
+    # تحميل الخط برمجياً مع مهلة اتصال (timeout) تمنع أي تعليق للبوت
     try:
-        print(f"⏳ Font file {local_path} missing. Downloading from source for HD sharp text...")
-        urllib.request.urlretrieve(fallback_url, local_path)
-        print(f"✅ Cached {local_path} successfully.")
+        print(f"⏳ Downloading {local_path} with safety timeout...")
+        with urllib.request.urlopen(fallback_url, timeout=5) as response:
+            font_data = response.read()
+            with open(local_path, "wb") as f:
+                f.write(font_data)
+        print(f"✅ Cached {local_path} successfully in temp.")
         return ImageFont.truetype(local_path, size)
     except Exception as e:
-        print(f"⚠️ Font download failed fallback to default: {e}")
-        return ImageFont.load_default()
+        print(f"⚠️ Font fetch bypass: {e}")
+        try:
+            return ImageFont.load_default()
+        except Exception:
+            return None
 
 # ذاكرة التخزين المؤقت للأيقونات
 icon_cache = {}
@@ -217,11 +228,13 @@ async def create_character_card(client, char_data, player_data):
         bg_final = Image.blend(bg_base, blurred_splash, 0.55)
         card.paste(bg_final, (0, 0))
 
-        # معالجة لون التمييز المشتق المشع ديناميكياً من عنصر الشخصية الفعلي
+        # معالجة لون التمييز المشتق المشع ديناميكياً من عنصر الشخصية الفعلي مع معالجة آمنة للقيم الفارغة
         element_data = char_data.get("element", {})
         element_color_hex = "#FFD764"
         if isinstance(element_data, dict):
-            element_color_hex = element_data.get("color", "#FFD764")
+            element_color_hex = element_data.get("color")
+            if not element_color_hex:
+                element_color_hex = "#FFD764"
         elif isinstance(element_data, str):
             elem_lower = element_data.lower()
             if "fire" in elem_lower: element_color_hex = "#FF4500"
@@ -334,8 +347,8 @@ async def create_character_card(client, char_data, player_data):
             if a_img:
                 card.paste(a_img, (510, lc_stat_y), a_img)
                 
-        draw_shadow_text(draw, (560, lc_stat_y + 1), f"Base {a_name}:", font_small, text_soft)
-        draw_shadow_text(draw, (740, lc_stat_y + 1), str(a_val), font_small, text_white)
+        draw_shadow_text(draw, (540, lc_stat_y + 1), f"Base {a_name}:", font_small, text_soft)
+        draw_shadow_text(draw, (720, lc_stat_y + 1), str(a_val), font_small, text_white)
         lc_stat_y += 28
 
 
@@ -355,7 +368,7 @@ async def create_character_card(client, char_data, player_data):
         
         try:
             val_width = draw.textlength(s_val, font=font_bold)
-        except AttributeError:
+        except Exception:
             val_width = len(s_val) * 8.5
         draw_shadow_text(draw, (1180 - val_width, stat_y + 3), s_val, font_bold, text_white)
         
@@ -381,7 +394,7 @@ async def create_character_card(client, char_data, player_data):
             test_line = line + word + " "
             try:
                 text_width = draw.textlength(test_line, font=font_small)
-            except AttributeError:
+            except Exception:
                 text_width = len(test_line) * 6
                 
             if text_width < 260:
@@ -398,11 +411,11 @@ async def create_character_card(client, char_data, player_data):
     # ==================== القسم الرابع (أقصى اليمين): قطع الريليكس الستة ====================
     for idx, r in enumerate(relics[:6]):
         box_y1 = 50 + (idx * 118)
-        box_y2 = box_y1 + 108  # تم تصحيح الخطأ البرمجي الفارق هنا بدقة
+        box_y2 = box_y1 + 108
         box_x1 = 1230
         box_x2 = 1560
         
-        # لوحات زجاجية مصغرة داكنة لكل قطعة ريليك لعزل النصوص تماماً
+        # لوحات زجاجية مصغرة داكنة لكل قطعة ريليك لعزل النصوص تماماً وبأبعاد آمنة
         draw.rounded_rectangle([box_x1 + 12, box_y1, box_x2 - 12, box_y2], radius=12, fill=(0, 0, 0, 60))
         
         r_name = r.get("name", f"Relic #{idx+1}")
@@ -428,7 +441,7 @@ async def create_character_card(client, char_data, player_data):
             draw_shadow_text(draw, (box_x1 + 80, box_y1 + 34), "Main: ", font_small, text_soft)
             try:
                 main_label_width = draw.textlength("Main: ", font=font_small)
-            except AttributeError:
+            except Exception:
                 main_label_width = 38
             draw_shadow_text(draw, (box_x1 + 80 + main_label_width, box_y1 + 34), f"{m_name} ({m_display})", font_small, highlight_color)
             
@@ -443,16 +456,16 @@ async def create_character_card(client, char_data, player_data):
                 short_name = str(s_name).replace("_", " ")[:10]
                 stat_text = f"{short_name}: {s_display}"
                 
-                sub_col_x = box_x1 + 80 if i % 2 == 0 else box_x1 + 195
+                sub_col_x = box_x1 + 80 if i % 2 == 0 else box_x1 + 175
                 sub_row_y = box_y1 + 58 if i < 2 else box_y1 + 82
                 
-                # فصل ذكي: رسم المسمى بالرمادي الأنيق، والقيمة بالأبيض الناصع
+                # فصل ذكي ومريح للغاية: رسم المسمى بالرمادي الأنيق، والقيمة بالأبيض الناصع
                 label_part = f"{short_name}:"
                 val_part = f" {s_display}"
                 draw_shadow_text(draw, (sub_col_x, sub_row_y), label_part, font_small, text_soft)
                 try:
                     lbl_w = draw.textlength(label_part, font=font_small)
-                except AttributeError:
+                except Exception:
                     lbl_w = len(label_part) * 7.5
                 draw_shadow_text(draw, (sub_col_x + lbl_w, sub_row_y), val_part, font_small, text_white)
 
