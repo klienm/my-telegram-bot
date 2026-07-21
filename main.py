@@ -1,6 +1,7 @@
 import os
 import re
 import httpx
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 from io import BytesIO
@@ -60,7 +61,6 @@ def format_stat_value(name, val, is_planar=False):
 # دالة قص متطورة لدمج صورة الشخصية بسلاسة متناهية مع الخلفية عن طريق تلاشي الحواف اليمنى ودوران الزوايا الأخرى
 def mask_rounded_fade(img, radius=24, fade_width=80):
     w, h = img.size
-    # قناع تلاشي أفقي للحافة اليمنى
     mask = Image.new("L", (w, h), 255)
     gradient = Image.new("L", (fade_width, 1))
     grad_draw = ImageDraw.Draw(gradient)
@@ -69,12 +69,10 @@ def mask_rounded_fade(img, radius=24, fade_width=80):
     gradient = gradient.resize((fade_width, h), Image.Resampling.BILINEAR)
     mask.paste(gradient, (w - fade_width, 0))
     
-    # قناع دوران الحواف بقية الزوايا
     rounded_mask = Image.new("L", (w, h), 0)
     rounded_draw = ImageDraw.Draw(rounded_mask)
     rounded_draw.rounded_rectangle([0, 0, w, h], radius=radius, fill=255)
     
-    # دمج الأقنعة لإنشاء حافة تلاشي انسيابية دائرية
     final_mask = ImageChops.multiply(mask, rounded_mask)
     
     rounded_img = Image.new("RGBA", img.size)
@@ -86,6 +84,49 @@ def draw_shadow_text(draw, position, text, font, fill, shadow_fill=(0, 0, 0, 255
     x, y = position
     draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow_fill)
     draw.text((x, y), text, font=font, fill=fill)
+
+# مسارات وروابط تحميل خطوط DejaVu عريضة وحادة لضمان جودة Figma الاحترافية في بايثون
+DEJAVU_BOLD_URL = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans-Bold.ttf"
+DEJAVU_REG_URL = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/fonts/dejavu-fonts-ttf-2.37/ttf/DejaVuSans.ttf"
+
+LOCAL_BOLD_PATH = "DejaVuSans-Bold.ttf"
+LOCAL_REG_PATH = "DejaVuSans.ttf"
+
+def get_sharp_font(size, bold=True):
+    """
+    تقوم هذه الدالة بفحص مسارات النظام في لينكس وجلب خطوط DejaVuSans المتجهية الفاخرة.
+    في حال غيابها من السيرفر، تقوم بتحميلها وحفظها محلياً لضمان رسم حاد Sharp 100% بدون تشويش.
+    """
+    sys_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    sys_reg = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    
+    selected_path = sys_bold if bold else sys_reg
+    local_path = LOCAL_BOLD_PATH if bold else LOCAL_REG_PATH
+    fallback_url = DEJAVU_BOLD_URL if bold else DEJAVU_REG_URL
+    
+    # فحص مسار نظام لينكس أولاً
+    if os.path.exists(selected_path):
+        try:
+            return ImageFont.truetype(selected_path, size)
+        except Exception:
+            pass
+            
+    # فحص المجلد المحلي للمشروع ثانياً
+    if os.path.exists(local_path):
+        try:
+            return ImageFont.truetype(local_path, size)
+        except Exception:
+            pass
+            
+    # تحميل الخط برمجياً إذا لم يتوفر على خادم التشغيل
+    try:
+        print(f"⏳ Font file {local_path} missing. Downloading from source for HD sharp text...")
+        urllib.request.urlretrieve(fallback_url, local_path)
+        print(f"✅ Cached {local_path} successfully.")
+        return ImageFont.truetype(local_path, size)
+    except Exception as e:
+        print(f"⚠️ Font download failed fallback to default: {e}")
+        return ImageFont.load_default()
 
 # ذاكرة التخزين المؤقت للأيقونات
 icon_cache = {}
@@ -124,58 +165,14 @@ async def create_character_card(client, char_data, player_data):
     card = Image.new("RGBA", (1600, 800), (10, 12, 18, 255))
     draw = ImageDraw.Draw(card)
 
-    # مصفوفات للبحث عن أفضل خط عريض ونظيف مثبت على نظام التشغيل
-    FONT_DIR_SEARCH_BOLD = [
-        "/usr/share/fonts/truetype/montserrat/Montserrat-Bold.ttf",
-        "/usr/share/fonts/truetype/roboto/hinted/Roboto-Bold.ttf",
-        "/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
-    ]
-    FONT_DIR_SEARCH_REG = [
-        "/usr/share/fonts/truetype/montserrat/Montserrat-Regular.ttf",
-        "/usr/share/fonts/truetype/roboto/hinted/Roboto-Regular.ttf",
-        "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
-    ]
+    # جلب الخطوط بشكل حاد وبمقاسات كبيرة ومثالية تمنع الإجهاد البصري تماماً
+    font_large = get_sharp_font(34, bold=True)   # اسم الشخصية
+    font_title = get_sharp_font(24, bold=True)   # أسماء السلاح وعناوين المهارات
+    font_bold = get_sharp_font(18, bold=True)    # الإحصائيات الرئيسية ونسب الريليكس والمستويات
+    font_sub = get_sharp_font(15, bold=False)    # البيانات الفرعية والمستويات الجانبية
+    font_small = get_sharp_font(13, bold=False)  # تفاصيل إحصائيات الريليكس الفرعية
 
-    selected_bold_path = None
-    selected_reg_path = None
-
-    for path in FONT_DIR_SEARCH_BOLD:
-        if os.path.exists(path):
-            selected_bold_path = path
-            break
-
-    for path in FONT_DIR_SEARCH_REG:
-        if os.path.exists(path):
-            selected_reg_path = path
-            break
-
-    # تطبيق مقاسات الخطوط الكبيرة والواضحة جداً لحماية العين من الإجهاد
-    try:
-        if selected_bold_path and selected_reg_path:
-            font_large = ImageFont.truetype(selected_bold_path, 34)
-            font_title = ImageFont.truetype(selected_bold_path, 24)
-            font_bold = ImageFont.truetype(selected_bold_path, 18)
-            font_sub = ImageFont.truetype(selected_reg_path, 16)
-            font_small = ImageFont.truetype(selected_reg_path, 13)
-        else:
-            # في حال تعذر العثور على المسارات، نستخدم خط DejaVu الافتراضي بمقاسات كبيرة
-            font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 34)
-            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-            font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
-            font_sub = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
-            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
-    except Exception:
-        font_large = font_title = font_bold = font_sub = font_small = ImageFont.load_default()
-
-    # جلب صورة السبلاش آرت لاستخراج الألوان وعرضها
+    # جلب صورة السبلاش آرت مسبقاً لاستخراج الألوان وعرضها
     splash_img = None
     if char_id:
         portrait_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/image/character_portrait/{char_id}.png"
@@ -186,7 +183,7 @@ async def create_character_card(client, char_data, player_data):
         img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{splash_icon}"
         splash_img = await fetch_image(client, img_url)
 
-    # الألوان الافتراضية
+    # الألوان الافتراضية للبطاقة
     highlight_color = (255, 215, 100, 255)
     subtitle_color = (150, 200, 255, 255)
     bg_color = (10, 12, 18, 255)
@@ -203,7 +200,7 @@ async def create_character_card(client, char_data, player_data):
         bg_color = (int(r * 0.18), int(g * 0.18), int(b * 0.18), 255)
         bg_base = Image.new("RGBA", (1600, 800), bg_color)
         
-        # تخفيف شدة التغبيش لـ 30 (بدلاً من 50) للحفاظ على عمق الخلفية ووضوح تفاصيل السبلاش آرت
+        # تخفيف شدة التغبيش لـ 30 للحفاظ على عمق الخلفية ووضوح تفاصيل السبلاش آرت
         blurred_splash = resize_cover(splash_img, 1600, 800, focus_y=0.2)
         blurred_splash = blurred_splash.filter(ImageFilter.GaussianBlur(radius=30))
         
@@ -235,7 +232,7 @@ async def create_character_card(client, char_data, player_data):
     else:
         card.paste(Image.new("RGBA", (1600, 800), bg_color), (0, 0))
 
-    # تخفيف عتامة الطبقة الداكنة (Alpha 95 بدلاً من 130) لجعل الكارد مضيئاً وأكثر إشراقاً
+    # تخفيف عتامة الطبقة الداكنة (Alpha 95) لجعل الكارد مضيئاً وأكثر إشراقاً ووضوحاً
     tint = Image.new("RGBA", (1600, 800), (8, 10, 16, 95))
     card = Image.alpha_composite(card, tint)
     draw = ImageDraw.Draw(card)
