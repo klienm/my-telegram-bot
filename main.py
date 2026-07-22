@@ -175,8 +175,9 @@ def resize_cover(img, target_w, target_h):
     return img.crop((left, top, left + target_w, top + target_h))
 
 
-FONT_BOLD_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Bold.ttf"
-FONT_REG_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Medium.ttf"
+# تم تحديث الروابط للعمل بشكل مباشر بدون 404
+FONT_BOLD_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Bold.ttf"
+FONT_REG_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Medium.ttf"
 
 temp_dir = tempfile.gettempdir()
 LOCAL_BOLD_PATH = os.path.join(temp_dir, "Montserrat-Bold.ttf")
@@ -276,7 +277,6 @@ def draw_soft_text(base_img, draw, position, text, font, fill,
     bbox = draw.textbbox((x, y), text, font=font)
     pad = blur_radius * 3 + 12
     
-    # إصلاح: تحويل الأبعاد إلى int لتجنب خطأ Pillow للإصدارات الحديثة
     layer_w = int(max(1, (bbox[2] - bbox[0]) + pad * 2))
     layer_h = int(max(1, (bbox[3] - bbox[1]) + pad * 2))
 
@@ -313,7 +313,6 @@ async def create_character_card(session, char_data, player_data):
     char_level = char_data.get("level", 1)
     char_id = str(char_data.get("id", ""))
 
-    # دمج attributes + additions لحساب القيمة النهائية لكل ستات
     final_stats = {}
     for attr in char_data.get("attributes", []):
         field = attr["field"]
@@ -357,7 +356,6 @@ async def create_character_card(session, char_data, player_data):
         dom_r, dom_g, dom_b = get_dominant_color(splash_img)
         text_highlight = (min(255, dom_r + 140), min(255, dom_g + 140), min(255, dom_b + 140), 255)
 
-        # نبني خلفية معتمة بالكامل (بدون أي ثقوب شفافية) عشان الألوان تطلع نظيفة
         bg_base = Image.new("RGBA", (W, H), (dom_r // 7, dom_g // 7, dom_b // 7, 255))
         bg_blur = resize_cover(splash_img, W, H).filter(ImageFilter.GaussianBlur(130))
         bg_base.alpha_composite(bg_blur, (0, 0))
@@ -365,13 +363,11 @@ async def create_character_card(session, char_data, player_data):
 
         splash_render = resize_cover(splash_img, 620 * SCALE, 800 * SCALE)
 
-        # ظل ناعم خلف الشخصية لإحساس بالعمق
         silhouette = Image.new("RGBA", splash_render.size, (0, 0, 0, 0))
         silhouette.putalpha(splash_render.split()[3].point(lambda a: int(a * 0.5)))
         silhouette = silhouette.filter(ImageFilter.GaussianBlur(16 * SCALE))
         card.alpha_composite(silhouette, (-50 * SCALE + 8 * SCALE, 8 * SCALE))
 
-        # قناع تلاشي أفقي حتى تندمج الشخصية بالخلفية بسلاسة
         mask = Image.new("L", splash_render.size, 255)
         mask_draw = ImageDraw.Draw(mask)
         fade_width = 240 * SCALE
@@ -427,7 +423,7 @@ async def create_character_card(session, char_data, player_data):
 
         card.paste(e_bg, (eidolon_x, e_y), e_bg)
 
-    # ---------------- معلومات الشخصية (اسم + مستوى + لاعب) ----------------
+    # ---------------- معلومات الشخصية ----------------
     name_y = 530 * SCALE
     draw_panel(card, (20 * SCALE, 500 * SCALE, 950 * SCALE, 770 * SCALE))
 
@@ -438,13 +434,12 @@ async def create_character_card(session, char_data, player_data):
     p_uid = player_data.get("uid", "-")
     draw_soft_text(card, draw, (40 * SCALE, name_y + 175 * SCALE), f"{p_name}  •  UID {p_uid}", font_sub, (255, 255, 255, 255))
 
-    # مجموعات الريليكس المفعّلة (2pc / 4pc)
     relic_sets = char_data.get("relic_sets", [])
     if relic_sets:
         set_text = "   ".join(f"{s.get('num', 0)}pc {s.get('name', '')}" for s in relic_sets[:3])
         draw_soft_text(card, draw, (40 * SCALE, name_y + 215 * SCALE), set_text[:60], font_small, text_highlight)
 
-    # ---------------- السلاح (Light Cone) ----------------
+    # ---------------- السلاح ----------------
     equip = char_data.get("light_cone", {})
     if equip:
         lc_x, lc_y = 585 * SCALE, 40 * SCALE
@@ -484,7 +479,7 @@ async def create_character_card(session, char_data, player_data):
 
         draw_soft_text(card, draw, (lc_x + 110 * SCALE, lc_y + 86 * SCALE), prop_text[:42], font_small, (255, 255, 255, 255))
 
-    # ---------------- المهارات (Skills) ----------------
+    # ---------------- المهارات ----------------
     skills = char_data.get("skills", [])
     if skills:
         tr_x, tr_y = 585 * SCALE, 195 * SCALE
@@ -508,7 +503,7 @@ async def create_character_card(session, char_data, player_data):
             draw_soft_text(card, draw, (tr_x + 330 * SCALE, t_y + 4 * SCALE), f"Lv.{sk_level}/{sk_max}", font_bold, text_highlight)
             t_y += 48 * SCALE
 
-    # ---------------- الإحصائيات (Stats) ----------------
+    # ---------------- الإحصائيات ----------------
     stat_start_x, stat_start_y = 585 * SCALE, 415 * SCALE
     draw_panel(card, (stat_start_x - 15 * SCALE, stat_start_y - 15 * SCALE, 990 * SCALE, stat_start_y + 46 * SCALE + 7 * 42 * SCALE))
 
@@ -532,7 +527,7 @@ async def create_character_card(session, char_data, player_data):
         draw_soft_text(card, draw, (980 * SCALE - val_width, s_y + 2 * SCALE), stat["value"], font_bold, text_highlight)
         s_y += 42 * SCALE
 
-    # ---------------- الريليكس (Relics) ----------------
+    # ---------------- الريليكس ----------------
     relics = char_data.get("relics", [])
     if relics:
         draw_panel(card, (995 * SCALE, 30 * SCALE, 1580 * SCALE, 30 * SCALE + min(len(relics), 6) * 124 * SCALE + 20 * SCALE))
@@ -756,7 +751,7 @@ async def message_listener(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------------------------------------------------------
-# سيرفر وهمي (keep alive) - يعتمد على PORT من البيئة لو موجود (مهم لـ Render)
+# سيرفر وهمي (keep alive) - يعتمد على PORT من البيئة
 # ---------------------------------------------------------------------------
 
 app_web = Flask('')
@@ -779,7 +774,7 @@ def keep_alive():
 
 
 async def post_init(application):
-    await download_fonts_on_startup()
+    await download_fonts_on_startup():
     bot_info = await application.bot.get_me()
     application.bot_data["username"] = bot_info.username
     logging.info(f"🤖 Bot @{bot_info.username} is fully initialized and ready!")
