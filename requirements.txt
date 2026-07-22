@@ -1,3 +1,5 @@
 python-telegram-bot
-httpx
-Pillow
+flask
+pillow
+aiohttp
+aiosqlite
