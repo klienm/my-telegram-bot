@@ -267,7 +267,7 @@ def get_dominant_color(img):
 
 
 def draw_soft_text(base_img, draw, position, text, font, fill,
-                    shadow_color=(0, 0, 0, 175), blur_radius=5, offset=(0, 4)):
+                   shadow_color=(0, 0, 0, 175), blur_radius=5, offset=(0, 4)):
     """
     يرسم نص فوق ظل ناعم (مموّه) بدل ظل حاد بأوفست، حتى يصير شكل الكارد أهدأ للعين.
     يشتغل بس على مساحة النص (مو الكارد كامل) حتى يضل سريع.
@@ -275,8 +275,10 @@ def draw_soft_text(base_img, draw, position, text, font, fill,
     x, y = position
     bbox = draw.textbbox((x, y), text, font=font)
     pad = blur_radius * 3 + 12
-    layer_w = max(1, (bbox[2] - bbox[0]) + pad * 2)
-    layer_h = max(1, (bbox[3] - bbox[1]) + pad * 2)
+    
+    # إصلاح: تحويل الأبعاد إلى int لتجنب خطأ Pillow للإصدارات الحديثة
+    layer_w = int(max(1, (bbox[2] - bbox[0]) + pad * 2))
+    layer_h = int(max(1, (bbox[3] - bbox[1]) + pad * 2))
 
     shadow_layer = Image.new("RGBA", (layer_w, layer_h), (0, 0, 0, 0))
     shadow_draw = ImageDraw.Draw(shadow_layer)
@@ -669,8 +671,6 @@ async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     timeout = aiohttp.ClientTimeout(total=30)
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-    # مهم جداً: كل شيء يحتاج الجلسة (جلب البيانات + رسم الكارد وتحميل الصور)
-    # لازم يضل داخل نفس الـ async with، وإلا الجلسة تنغلق وتفشل كل الصور بصمت.
     async with aiohttp.ClientSession(headers=headers) as session:
         try:
             async with session.get(url, timeout=timeout) as response:
@@ -791,10 +791,6 @@ def main():
         logging.error("Error: BOT_TOKEN environment variable not found!")
         return
 
-    # إصلاح: بايثون 3.12+ ما عاد ينشئ event loop تلقائياً بالـ MainThread،
-    # ومكتبة python-telegram-bot لسا بتعتمد على asyncio.get_event_loop() داخلياً.
-    # ننشئ الـ loop يدوياً هون قبل أي شي حتى نتجنب:
-    # "RuntimeError: There is no current event loop in thread 'MainThread'"
     try:
         asyncio.get_event_loop()
     except RuntimeError:
