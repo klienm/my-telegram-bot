@@ -46,30 +46,30 @@ init_db()
 def track_message(user):
     if user.is_bot:
         return
-    
+
     conn = sqlite3.connect('messages.db', check_same_thread=False, timeout=10)
     cursor = conn.cursor()
-    
+
     user_id = user.id
     full_name = f"{user.first_name} {user.last_name or ''}".strip()
     username = f"@{user.username}" if user.username else "لا يوجد"
-    
+
     cursor.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,))
     row = cursor.fetchone()
-    
+
     if row:
         new_count = row[0] + 1
         cursor.execute('''
-            UPDATE user_messages 
-            SET message_count = ?, full_name = ?, username = ? 
+            UPDATE user_messages
+            SET message_count = ?, full_name = ?, username = ?
             WHERE user_id = ?
         ''', (new_count, full_name, username, user_id))
     else:
         cursor.execute('''
-            INSERT INTO user_messages (user_id, full_name, username, message_count) 
+            INSERT INTO user_messages (user_id, full_name, username, message_count)
             VALUES (?, ?, ?, 1)
         ''', (user_id, full_name, username))
-        
+
     conn.commit()
     conn.close()
 
@@ -82,23 +82,36 @@ def get_user_message_count(user_id):
     conn.close()
     return row[0] if row else 0
 
-# أمر ايدي المطور
+# دالة لتهريب نص HTML
+def escape_html(text: str) -> str:
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+# أمر الايدي
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not user:
         return
-    
+
+    # تسجيل الرسالة أيضاً عند استخدام الأمر
+    track_message(user)
+
     msg_count = get_user_message_count(user.id)
-    full_name = f"{user.first_name} {user.last_name or ''}".strip()
-    username = f"@{user.username}" if user.username else "لا يوجد"
-    
-    gender_text = "ولد" 
-    
+    full_name = escape_html(f"{user.first_name} {user.last_name or ''}".strip())
+    username = f"@{escape_html(user.username)}" if user.username else "لا يوجد"
+
+    gender_text = "ولد"
+
+    # استخدام HTML بدلاً من Markdown لتجنب كسر التنسيق بسبب الرموز الخاصة
     caption = (
-        f"👤 **الاسم:** {full_name}\n"
-        f"🔗 **اليوزر:** {username}\n"
-        f"💬 **عدد رسائلك:** {msg_count}\n"
-        f"⚧ **الجنس:** {gender_text}"
+        f"👤 <b>الاسم:</b> {full_name}\n"
+        f"🔗 <b>اليوزر:</b> {username}\n"
+        f"💬 <b>عدد رسائلك:</b> {msg_count}\n"
+        f"⚧ <b>الجنس:</b> {gender_text}"
     )
 
     try:
@@ -106,33 +119,39 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if photos and photos.total_count > 0:
             photo_file_id = photos.photos[0][0].file_id
             await update.message.reply_photo(
-                photo=photo_file_id, 
-                caption=caption, 
-                parse_mode="Markdown",
+                photo=photo_file_id,
+                caption=caption,
+                parse_mode="HTML",
                 reply_to_message_id=update.message.message_id
             )
         else:
             await update.message.reply_text(
-                caption, 
-                parse_mode="Markdown",
+                caption,
+                parse_mode="HTML",
                 reply_to_message_id=update.message.message_id
             )
-    except Exception:
-        await update.message.reply_text(
-            caption, 
-            parse_mode="Markdown",
-            reply_to_message_id=update.message.message_id
-        )
+    except Exception as e:
+        logging.warning(f"id_command error: {e}")
+        try:
+            await update.message.reply_text(
+                caption,
+                parse_mode="HTML",
+                reply_to_message_id=update.message.message_id
+            )
+        except Exception as e2:
+            logging.error(f"id_command fallback error: {e2}")
 
 # أدوات مساعدة للتصميم الفاخر
 async def fetch_image(session, url):
     try:
-        async with session.get(url, timeout=10) as response:
+        # الإصلاح: استخدام aiohttp.ClientTimeout بدلاً من رقم عادي
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with session.get(url, timeout=timeout) as response:
             if response.status == 200:
                 content = await response.read()
                 return Image.open(BytesIO(content)).convert("RGBA")
     except Exception as e:
-        print(f"⚠️ Error fetching image {url}: {e}")
+        logging.warning(f"fetch_image error for {url}: {e}")
     return None
 
 def resize_cover(img, target_w, target_h):
@@ -147,50 +166,51 @@ def resize_cover(img, target_w, target_h):
 FONT_BOLD_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Bold.ttf"
 FONT_REG_URL = "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Medium.ttf"
 
-# حفظ ملفات الخطوط في المجلد المؤقت للنظام لتجنب مشاكل الصلاحيات والقراءة فقط (Read-only) على خوادم الاستضافة السحابية
 temp_dir = tempfile.gettempdir()
 LOCAL_BOLD_PATH = os.path.join(temp_dir, "Montserrat-Bold.ttf")
 LOCAL_REG_PATH = os.path.join(temp_dir, "Montserrat-Medium.ttf")
 
 async def download_fonts_on_startup():
-    """
-    تحميل خطوط Montserrat المتجهية وحفظها في مجلد النظام المؤقت فور إقلاع البوت.
-    """
     if not os.path.exists(LOCAL_BOLD_PATH) or not os.path.exists(LOCAL_REG_PATH):
-        print("⏳ Startup: Downloading Montserrat fonts for high-resolution text...")
+        logging.info("⏳ Startup: Downloading Montserrat fonts...")
+        # الإصلاح: استخدام aiohttp.ClientTimeout الصحيح
+        timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession() as session:
             if not os.path.exists(LOCAL_BOLD_PATH):
                 try:
-                    async with session.get(FONT_BOLD_URL, timeout=15) as r:
+                    async with session.get(FONT_BOLD_URL, timeout=timeout) as r:
                         if r.status == 200:
                             content = await r.read()
                             with open(LOCAL_BOLD_PATH, "wb") as f:
                                 f.write(content)
-                            print("✅ Montserrat-Bold downloaded successfully.")
+                            logging.info("✅ Montserrat-Bold downloaded.")
+                        else:
+                            logging.error(f"❌ Font download failed, status: {r.status}")
                 except Exception as e:
-                    print(f"❌ Failed to download bold font: {e}")
+                    logging.error(f"❌ Failed to download bold font: {e}")
 
             if not os.path.exists(LOCAL_REG_PATH):
                 try:
-                    async with session.get(FONT_REG_URL, timeout=15) as r:
+                    async with session.get(FONT_REG_URL, timeout=timeout) as r:
                         if r.status == 200:
                             content = await r.read()
                             with open(LOCAL_REG_PATH, "wb") as f:
                                 f.write(content)
-                            print("✅ Montserrat-Medium downloaded successfully.")
+                            logging.info("✅ Montserrat-Medium downloaded.")
+                        else:
+                            logging.error(f"❌ Font download failed, status: {r.status}")
                 except Exception as e:
-                    print(f"❌ Failed to download regular font: {e}")
+                    logging.error(f"❌ Failed to download regular font: {e}")
 
 def get_sharp_font(size, bold=True):
     local_path = LOCAL_BOLD_PATH if bold else LOCAL_REG_PATH
-    
+
     if os.path.exists(local_path):
         try:
             return ImageFont.truetype(local_path, size)
         except Exception:
             pass
-            
-    # خطوط النظام البديلة في حال فشل التحميل
+
     sys_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans.ttf"
@@ -201,15 +221,18 @@ def get_sharp_font(size, bold=True):
                 return ImageFont.truetype(path, size)
             except Exception:
                 pass
-                
+
     return ImageFont.load_default()
 
 icon_cache = {}
+
 async def get_cached_icon(session, icon_path, size=None):
-    if not icon_path: return None
+    if not icon_path:
+        return None
     cache_key = (icon_path, size)
-    if cache_key in icon_cache: return icon_cache[cache_key]
-    
+    if cache_key in icon_cache:
+        return icon_cache[cache_key]
+
     img_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/{icon_path}"
     img = await fetch_image(session, img_url)
     if img:
@@ -231,15 +254,15 @@ def get_dominant_color(img):
     avg_pixel = tiny_img.getpixel((0, 0))
     return int(avg_pixel[0]), int(avg_pixel[1]), int(avg_pixel[2])
 
-# --- دالة رسم بطاقة الشخصية الحديثة الموحدة بدقة متناهية ---
+# --- دالة رسم بطاقة الشخصية ---
 async def create_character_card(session, char_data, player_data):
-    SCALE = 2  # دقة مضاعفة للتنعيم الخارق ورسم التفاصيل بجودة فائقة
-    
+    SCALE = 2
+
     char_name = char_data.get("name", "Character")
     char_level = char_data.get("level", 1)
     char_id = str(char_data.get("id", ""))
 
-    # 1. إحصائيات الشخصية
+    # إحصائيات الشخصية
     final_stats = {}
     for attr in char_data.get("attributes", []):
         field = attr["field"]
@@ -272,16 +295,15 @@ async def create_character_card(session, char_data, player_data):
                 display_val = f"{val * 100:.1f}%"
             else:
                 display_val = str(int(math.floor(val)))
-            
+
             rendered_stats.append({
                 "name": stat["name"],
                 "value": display_val,
                 "icon": stat["icon"]
             })
 
-    # 2. إنشاء اللوحة بخلفية داكنة راقية
     card = Image.new("RGBA", (1600 * SCALE, 800 * SCALE), (12, 12, 18, 255))
-    
+
     splash_img = None
     if char_id:
         portrait_url = f"https://raw.githubusercontent.com/Mar-7th/StarRailRes/master/image/character_portrait/{char_id}.png"
@@ -289,9 +311,8 @@ async def create_character_card(session, char_data, player_data):
 
     if splash_img:
         dom_r, dom_g, dom_b = get_dominant_color(splash_img)
-        # زيادة التفتيح للتدرج اللوني المشع لزيادة الوضوح والقوة
         text_highlight = (min(255, dom_r + 140), min(255, dom_g + 140), min(255, dom_b + 140), 255)
-        
+
         bg_blur = resize_cover(splash_img, 1600 * SCALE, 800 * SCALE).filter(ImageFilter.GaussianBlur(130))
         tint = Image.new("RGBA", (1600 * SCALE, 800 * SCALE), (dom_r // 7, dom_g // 7, dom_b // 7, 140))
         bg_blur = Image.alpha_composite(bg_blur.convert("RGBA"), tint)
@@ -304,42 +325,41 @@ async def create_character_card(session, char_data, player_data):
         for x in range(splash_render.width - fade_width, splash_render.width):
             alpha = int(255 * (1 - (x - (splash_render.width - fade_width)) / fade_width))
             mask_draw.line([(x, 0), (x, splash_render.height)], fill=alpha)
-        
+
         card.paste(splash_render, (-50 * SCALE, 0), mask)
     else:
         text_highlight = (255, 215, 100, 255)
 
     draw = ImageDraw.Draw(card)
-    
-    # 3. أحجام خطوط موزونة واحترافية وبدقة متناهية تمنع التداخل تماماً
-    font_large = get_sharp_font(52 * SCALE, bold=True)   # اسم الشخصية
-    font_title = get_sharp_font(30 * SCALE, bold=True)   # مستويات الشخصية والسلاح
-    font_bold = get_sharp_font(21 * SCALE, bold=True)    # القيم والإحصائيات الرئيسية
-    font_sub = get_sharp_font(18 * SCALE, bold=False)    # مسميات الإحصائيات
-    font_small = get_sharp_font(15 * SCALE, bold=False)  # الإحصائيات الفرعية
 
-    # 4. رسم الإيدولونز بألوان متباينة جداً (ذهبي وفحمي)
+    font_large = get_sharp_font(52 * SCALE, bold=True)
+    font_title = get_sharp_font(30 * SCALE, bold=True)
+    font_bold = get_sharp_font(21 * SCALE, bold=True)
+    font_sub = get_sharp_font(18 * SCALE, bold=False)
+    font_small = get_sharp_font(15 * SCALE, bold=False)
+
+    # الإيدولونز
     rank = char_data.get("rank", 0)
     rank_icons = char_data.get("rank_icons", [])
     eidolon_start_y = 65 * SCALE
     eidolon_x = 520 * SCALE
     e_size = 46 * SCALE
-    
+
     for i in range(6):
         e_y = eidolon_start_y + (i * 78 * SCALE)
         e_bg = Image.new("RGBA", (e_size, e_size), (0, 0, 0, 0))
         e_draw = ImageDraw.Draw(e_bg)
-        
+
         is_unlocked = i < rank
         if is_unlocked:
-            fill_color = (245, 165, 35, 240)    # ذهبي مشرق واضح
+            fill_color = (245, 165, 35, 240)
             border_color = (255, 220, 100, 255)
         else:
-            fill_color = (40, 40, 55, 230)      # فحمي غامق متباين تماماً
+            fill_color = (40, 40, 55, 230)
             border_color = (110, 110, 130, 200)
-        
+
         e_draw.ellipse([0, 0, e_size, e_size], fill=fill_color, outline=border_color, width=2 * SCALE)
-        
+
         if i < len(rank_icons):
             e_icon = await get_cached_icon(session, rank_icons[i], (32 * SCALE, 32 * SCALE))
             if e_icon:
@@ -348,26 +368,26 @@ async def create_character_card(session, char_data, player_data):
                     e_icon = e_icon.convert("LA").convert("RGBA")
                     e_icon.putalpha(e_icon.split()[3].point(lambda p: p * 0.3))
                 e_bg.paste(e_icon, icon_pos, e_icon)
-                
+
         card.paste(e_bg, (eidolon_x, e_y), e_bg)
 
-    # معلومات الشخصية واللاعب بمقاسات مريحة وتناسق عمودي ممتاز
+    # معلومات الشخصية
     name_y = 530 * SCALE
     draw_shadow_text(draw, (40 * SCALE, name_y), char_name.upper(), font_large, (255, 255, 255, 255))
     draw_shadow_text(draw, (40 * SCALE, name_y + 105 * SCALE), f"LEVEL {char_level} / 80", font_title, text_highlight)
-    
+
     p_name = player_data.get("nickname", "Unknown")
     p_uid = player_data.get("uid", "-")
     draw_shadow_text(draw, (40 * SCALE, name_y + 175 * SCALE), f"{p_name}  •  UID {p_uid}", font_sub, (255, 255, 255, 255))
 
-    # 5. السلاح (Light Cone) بمقاسات منسقة
+    # السلاح (Light Cone)
     equip = char_data.get("light_cone", {})
     if equip:
         lc_name = equip.get("name", "Unknown LC")
         lc_level = equip.get("level", "-")
         lc_rank = equip.get("rank", 1)
         lc_id = str(equip.get("id", ""))
-        
+
         lc_x, lc_y = 585 * SCALE, 40 * SCALE
         lc_img = None
         if lc_id:
@@ -375,17 +395,17 @@ async def create_character_card(session, char_data, player_data):
             lc_img = await fetch_image(session, lc_portrait_url)
             if lc_img:
                 lc_img = resize_cover(lc_img, 95 * SCALE, 120 * SCALE)
-        
+
         if not lc_img:
             lc_icon = equip.get("icon", "")
             lc_img = await get_cached_icon(session, lc_icon, (95 * SCALE, 120 * SCALE))
-            
+
         if lc_img:
             card.paste(lc_img, (lc_x, lc_y), lc_img)
-                
+
         draw_shadow_text(draw, (lc_x + 110 * SCALE, lc_y + 2 * SCALE), f"{lc_name[:22]}", font_bold, text_highlight)
         draw_shadow_text(draw, (lc_x + 110 * SCALE, lc_y + 44 * SCALE), f"Lv. {lc_level}  |  Superimposition {lc_rank}", font_sub, (255, 255, 255, 255))
-        
+
         lc_props = equip.get("properties", [])
         prop_text = ""
         for p in lc_props[:2]:
@@ -397,35 +417,35 @@ async def create_character_card(session, char_data, player_data):
                 prop_text += f"{p_name}: {int(p_val)}  "
         if not prop_text:
             prop_text = "Standard Light Cone Passive Active."
-            
+
         draw_shadow_text(draw, (lc_x + 110 * SCALE, lc_y + 86 * SCALE), prop_text[:42], font_small, (255, 255, 255, 255))
 
-    # 6. المهارات (Traces) - تم زيادة مسافات التباعد الرأسي لمنع تداخل الأحرف
+    # المهارات (Traces)
     skills = char_data.get("skills", [])
     if skills:
         tr_x, tr_y = 585 * SCALE, 195 * SCALE
         draw_shadow_text(draw, (tr_x, tr_y), "TRACES & ABILITIES", font_bold, text_highlight)
-        
+
         t_y = tr_y + 50 * SCALE
         for skill in skills[:4]:
             sk_name = skill.get("name", "Skill")
             sk_level = skill.get("level", 1)
             sk_max = skill.get("max_level", 10)
             sk_icon = skill.get("icon", "")
-            
+
             if sk_icon:
                 sk_img = await get_cached_icon(session, sk_icon, (44 * SCALE, 44 * SCALE))
                 if sk_img:
                     card.paste(sk_img, (tr_x, t_y - 2 * SCALE), sk_img)
-                    
+
             draw_shadow_text(draw, (tr_x + 55 * SCALE, t_y + 4 * SCALE), sk_name[:16], font_small, (255, 255, 255, 255))
             draw_shadow_text(draw, (tr_x + 330 * SCALE, t_y + 4 * SCALE), f"Lv.{sk_level}/{sk_max}", font_bold, text_highlight)
             t_y += 48 * SCALE
 
-    # 7. لوحة الإحصائيات (Stats) بمقاسات وهوامش مريحة جداً
+    # الإحصائيات (Stats)
     stat_start_x, stat_start_y = 585 * SCALE, 415 * SCALE
     draw_shadow_text(draw, (stat_start_x, stat_start_y), "COMBAT STATS", font_bold, text_highlight)
-    
+
     s_y = stat_start_y + 46 * SCALE
     for stat in rendered_stats[:7]:
         s_icon = stat["icon"]
@@ -433,41 +453,41 @@ async def create_character_card(session, char_data, player_data):
             s_img = await get_cached_icon(session, s_icon, (35 * SCALE, 35 * SCALE))
             if s_img:
                 card.paste(s_img, (stat_start_x, s_y), s_img)
-                
+
         draw_shadow_text(draw, (stat_start_x + 48 * SCALE, s_y + 2 * SCALE), stat["name"], font_sub, (255, 255, 255, 255))
-        
+
         try:
             val_width = draw.textlength(stat["value"], font=font_bold)
         except AttributeError:
             val_width = len(stat["value"]) * 14 * SCALE
-            
+
         draw_shadow_text(draw, (980 * SCALE - val_width, s_y + 2 * SCALE), stat["value"], font_bold, text_highlight)
         s_y += 42 * SCALE
 
-    # 8. قطع الريليكس (Relics) بمقاسات وهوامش ذهبية منسقة تمنع التداخل تماماً
+    # الريليكس (Relics)
     relics = char_data.get("relics", []) or char_data.get("relicList", []) or []
     for idx, r in enumerate(relics[:6]):
         box_y = (45 + (idx * 124)) * SCALE
         box_x = 1010 * SCALE
-        
+
         r_lvl = r.get("level", 0)
         r_icon = r.get("icon", "")
         if r_icon:
             r_img = await get_cached_icon(session, r_icon, (95 * SCALE, 95 * SCALE))
             if r_img:
                 card.paste(r_img, (box_x, box_y + 2 * SCALE), r_img)
-                
+
         draw_shadow_text(draw, (box_x + 105 * SCALE, box_y + 2 * SCALE), f"+{r_lvl}", font_bold, text_highlight)
-        
+
         main_stat = r.get("main_affix", {})
         m_name = main_stat.get("name", "")
         m_val = main_stat.get("value", 0)
         m_display = main_stat.get("display", "")
         if not m_display:
-             m_display = f"{m_val*100:.1f}%" if main_stat.get("percent") else str(int(m_val))
-             
+            m_display = f"{m_val*100:.1f}%" if main_stat.get("percent") else str(int(m_val))
+
         draw_shadow_text(draw, (box_x + 175 * SCALE, box_y + 2 * SCALE), f"{m_name}: {m_display}", font_bold, (255, 255, 255, 255))
-        
+
         substats = r.get("sub_affix", [])
         for i, sub in enumerate(substats[:4]):
             s_name = sub.get("name", "")
@@ -475,13 +495,12 @@ async def create_character_card(session, char_data, player_data):
             if not s_display:
                 s_val = sub.get("value", 0)
                 s_display = f"{s_val*100:.1f}%" if sub.get("percent") else str(int(s_val))
-                
+
             stat_text = f"{s_name}: {s_display}"
             sub_x = box_x + 105 * SCALE if i % 2 == 0 else box_x + 355 * SCALE
             sub_y = box_y + 44 * SCALE if i < 2 else box_y + 78 * SCALE
             draw_shadow_text(draw, (sub_x, sub_y), stat_text, font_small, (255, 255, 255, 255))
 
-    # التنعيم الأخير لزيادة جودة وحجم الصورة لتبدو خلابة
     card = card.resize((1600, 800), Image.Resampling.LANCZOS)
     card = card.filter(ImageFilter.SHARPEN)
 
@@ -490,23 +509,24 @@ async def create_character_card(session, char_data, player_data):
     buf.seek(0)
     return buf
 
-# نظام شخصيات Honkai: Star Rail (HSR) المطور
+# نظام شخصيات Honkai: Star Rail
 async def hsr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
-            "الرجاء إدخال الـ UID الخاص بك بعد الأمر، مثال:\n`/hsr 701021140`", 
-            parse_mode="Markdown",
+            "الرجاء إدخال الـ UID الخاص بك بعد الأمر، مثال:\n<code>/hsr 701021140</code>",
+            parse_mode="HTML",
             reply_to_message_id=update.message.message_id
         )
         return
-    
+
     uid = context.args[0]
-    # استخدام الواجهة الأحدث والأكثر تفصيلاً sr_info_parsed للحصول على البيلد الفاخر
     url = f"https://api.mihomo.me/sr_info_parsed/{uid}?lang=en"
-    
+
+    # الإصلاح: استخدام aiohttp.ClientTimeout الصحيح
+    timeout = aiohttp.ClientTimeout(total=20)
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.get(url, timeout=15) as response:
+            async with session.get(url, timeout=timeout) as response:
                 if response.status != 200:
                     await update.message.reply_text(
                         "❌ تعذر جلب بيانات الحساب. تأكد من صحة الـ UID وأن معرض الحساب عام في اللعبة.",
@@ -516,11 +536,12 @@ async def hsr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 data = await response.json()
         except Exception as e:
             await update.message.reply_text(
-                f"❌ حدث خطأ في الاتصال بالخادم: {e}",
+                f"❌ حدث خطأ في الاتصال بالخادم: {escape_html(str(e))}",
+                parse_mode="HTML",
                 reply_to_message_id=update.message.message_id
             )
             return
-            
+
     try:
         avatars = data.get("characters", []) or data.get("avatar_list", [])
         if not avatars:
@@ -529,121 +550,135 @@ async def hsr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_to_message_id=update.message.message_id
             )
             return
-            
+
         keyboard = []
         row = []
         for idx, char in enumerate(avatars):
             name = char.get("name", f"شخصية #{idx + 1}")
-            row.append(InlineKeyboardButton(name, callback_data=f"hsr_{uid}_{idx}"))
+            # الإصلاح: استخدام فاصل مختلف بدلاً من _ لتجنب مشاكل التقسيم
+            row.append(InlineKeyboardButton(name, callback_data=f"hsr|{uid}|{idx}"))
             if len(row) == 4:
                 keyboard.append(row)
                 row = []
         if row:
             keyboard.append(row)
-            
+
         reply_markup = InlineKeyboardMarkup(keyboard)
         player = data.get("player", {})
-        nickname = player.get("nickname", "Player")
-        
+        nickname = escape_html(player.get("nickname", "Player"))
+
         await update.message.reply_text(
-            f"👤 **اللاعب:** {nickname}\n✨ **اختر الشخصية لتصميم بطاقتها الاحترافية:**", 
-            reply_markup=reply_markup, 
-            parse_mode="Markdown",
+            f"👤 <b>اللاعب:</b> {nickname}\n✨ <b>اختر الشخصية لتصميم بطاقتها الاحترافية:</b>",
+            reply_markup=reply_markup,
+            parse_mode="HTML",
             reply_to_message_id=update.message.message_id
         )
     except Exception as e:
         await update.message.reply_text(
-            f"❌ حدث خطأ أثناء معالجة البيانات: {e}",
-            reply_to_message_id=update.message.message_id
+            f"❌ حدث خطأ أثناء معالجة البيانات: {escape_html(str(e))}",
+            parse_mode="HTML"
         )
 
 async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("جاري تصميم البطاقة الفنية...", show_alert=False)
-    
-    data_parts = query.data.split("_")
+
+    # الإصلاح: استخدام | كفاصل بدلاً من _ لأن الـ UID قد يحتوي على رموز
+    data_parts = query.data.split("|")
+    if len(data_parts) < 3:
+        await query.message.reply_text("❌ بيانات غير صالحة.")
+        return
+
     uid = data_parts[1]
     char_idx = int(data_parts[2])
-    
+
     url = f"https://api.mihomo.me/sr_info_parsed/{uid}?lang=en"
-    
+
+    # الإصلاح: استخدام aiohttp.ClientTimeout الصحيح
+    timeout = aiohttp.ClientTimeout(total=30)
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.get(url, timeout=20) as response:
+            async with session.get(url, timeout=timeout) as response:
                 if response.status != 200:
                     await query.message.reply_text("❌ انتهت صلاحية البيانات أو حدث خطأ أثناء الاتصال بالسيرفر.")
                     return
                 data = await response.json()
         except Exception as e:
-            await query.message.reply_text(f"❌ حدث خطأ أثناء جلب البيانات: {e}")
+            await query.message.reply_text(f"❌ حدث خطأ أثناء جلب البيانات: {escape_html(str(e))}", parse_mode="HTML")
             return
-            
+
     avatars = data.get("characters", []) or data.get("avatar_list", [])
     player_data = data.get("player", {})
-    
+
     if char_idx >= len(avatars):
         await query.message.reply_text("❌ لم يتم العثور على الشخصية المطلوبة.")
         return
-        
+
     char_data = avatars[char_idx]
-    name = char_data.get("name", "Unknown")
-    
+    name = escape_html(char_data.get("name", "Unknown"))
+
     try:
         card_buf = await create_character_card(session, char_data, player_data)
-        
-        # إرسال الصورة كرد (Reply) مباشر على رسالة المستخدم الأصلية
+
         reply_id = None
         if query.message.reply_to_message:
             reply_id = query.message.reply_to_message.message_id
         else:
             reply_id = query.message.message_id
-            
+
         await query.message.reply_photo(
-            photo=card_buf, 
-            caption=f"✨ **إحصائيات وبيلد {name} الاحترافي**", 
-            parse_mode="Markdown",
+            photo=card_buf,
+            caption=f"✨ <b>إحصائيات وبيلد {name} الاحترافي</b>",
+            parse_mode="HTML",
             reply_to_message_id=reply_id
         )
     except Exception as e:
-        print(f"Error drawing card: {e}")
-        await query.message.reply_text(f"❌ حدث خطأ أثناء معالجة الصورة الفنية: {e}")
+        logging.error(f"Error drawing card: {e}")
+        await query.message.reply_text(
+            f"❌ حدث خطأ أثناء معالجة الصورة الفنية: {escape_html(str(e))}",
+            parse_mode="HTML"
+        )
 
 # مراقب الرسائل والرد الذكي
 async def message_listener(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message or not update.message.text:
         return
-        
+
     user = update.effective_user
     track_message(user)
-    
+
     text = update.message.text.strip()
-    
-    # 1. التقاط كلمة ايدي بأكثر من شكل والرد المباشر
+
+    # التقاط كلمة ايدي بأكثر من شكل
     if text in ["ايدي", "أيدي", "إيدي", "ايدى"]:
         await id_command(update, context)
         return
 
-    # 2. الرد على المنشن أو الرد على البوت بشكل تفاعلي وذكي
+    # الرد على المنشن أو الرد على البوت
     bot_username = context.application.bot_data.get("username")
     is_mentioned = bot_username and (f"@{bot_username}" in text)
-    is_reply_to_bot = update.message.reply_to_message and update.message.reply_to_message.from_user.id == context.bot.id
+    is_reply_to_bot = (
+        update.message.reply_to_message is not None
+        and update.message.reply_to_message.from_user is not None
+        and update.message.reply_to_message.from_user.id == context.bot.id
+    )
 
     if is_mentioned or is_reply_to_bot:
-        full_name = f"{user.first_name} {user.last_name or ''}".strip()
+        full_name = escape_html(f"{user.first_name} {user.last_name or ''}".strip())
         ai_reply_text = (
             f"مرحباً يا {full_name}! 🤖✨\n\n"
             "أنا مساعدك الذكي في هذا الجروب. لقد رصدت إشارتك لي بنجاح! 🚀\n\n"
             "إليك ما يمكنني مساعدتك به حالياً:\n"
-            "• اكتب كلمة **ايدي** لعرض معلومات حسابك وعدد رسائلك في المجموعة كـ Reply.\n"
-            "• استخدم الأمر `/hsr [UID]` لعرض تفاصيل بيلدات شخصياتك في لعبة Honkai: Star Rail ببطاقة فنية عريضة ذات دقة خارقة وخطوط واضحة تماماً!"
+            "• اكتب كلمة <b>ايدي</b> لعرض معلومات حسابك وعدد رسائلك في المجموعة كـ Reply.\n"
+            "• استخدم الأمر <code>/hsr [UID]</code> لعرض تفاصيل بيلدات شخصياتك في لعبة Honkai: Star Rail ببطاقة فنية احترافية!"
         )
         await update.message.reply_text(
-            ai_reply_text, 
-            parse_mode="Markdown",
+            ai_reply_text,
+            parse_mode="HTML",
             reply_to_message_id=update.message.message_id
         )
 
-# السيرفر الوهمي
+# السيرفر الوهمي (keep alive)
 app_web = Flask('')
 
 @app_web.route('/')
@@ -655,35 +690,32 @@ def run_web():
 
 def keep_alive():
     t = Thread(target=run_web)
+    t.daemon = True
     t.start()
 
 async def post_init(application):
-    """
-    دالة تُنفذ تلقائياً بشكل غير متزامن عند تشغيل البوت وقبل البدء بالاستقبال.
-    تستخدم لتحميل الخطوط بدقة وحفظ اسم البوت في الذاكرة لتشغيل الرد الذكي.
-    """
     await download_fonts_on_startup()
     bot_info = await application.bot.get_me()
     application.bot_data["username"] = bot_info.username
-    print(f"🤖 Bot @{bot_info.username} is fully initialized and ready!")
+    logging.info(f"🤖 Bot @{bot_info.username} is fully initialized and ready!")
 
 def main():
     TOKEN = os.environ.get("BOT_TOKEN")
     if not TOKEN:
-        print("Error: BOT_TOKEN environment variable not found!")
+        logging.error("Error: BOT_TOKEN environment variable not found!")
         return
 
-    # بناء البوت مع تسجيل دالة post_init لتهيئة الخطوط والرد الذكي بشكل سليم
     application = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("hsr", hsr_command))
     application.add_handler(CommandHandler("start", hsr_command))
-    application.add_handler(CallbackQueryHandler(hsr_callback, pattern="^hsr_"))
+    # الإصلاح: تحديث pattern ليتوافق مع الفاصل الجديد |
+    application.add_handler(CallbackQueryHandler(hsr_callback, pattern=r"^hsr\|"))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_listener))
 
     keep_alive()
-    print("Bot is up and running...")
+    logging.info("Bot is up and running...")
     application.run_polling()
 
 if __name__ == '__main__':
