@@ -2,6 +2,7 @@ import os
 import sqlite3
 import logging
 import aiohttp
+import aiosqlite
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from flask import Flask
@@ -22,7 +23,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# 1. إعداد قاعدة البيانات لتخزين وتتبع الرسائل
+# 1. إعداد قاعدة البيانات الأولية (تُنفذ مرة واحدة عند التشغيل)
 def init_db():
     conn = sqlite3.connect('messages.db')
     cursor = conn.cursor()
@@ -39,56 +40,50 @@ def init_db():
 
 init_db()
 
-# دالة لتسجيل وحساب الرسائل في القاعدة
-def track_message(user):
+# دالة لتسجيل الرسائل بشكل غير متزامن (لأقصى سرعة)
+async def track_message(user):
     if user.is_bot:
         return
-    
-    conn = sqlite3.connect('messages.db')
-    cursor = conn.cursor()
     
     user_id = user.id
     full_name = f"{user.first_name} {user.last_name or ''}".strip()
     username = f"@{user.username}" if user.username else "لا يوجد"
     
-    cursor.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,))
-    row = cursor.fetchone()
-    
-    if row:
-        new_count = row[0] + 1
-        cursor.execute('''
-            UPDATE user_messages 
-            SET message_count = ?, full_name = ?, username = ? 
-            WHERE user_id = ?
-        ''', (new_count, full_name, username, user_id))
-    else:
-        cursor.execute('''
-            INSERT INTO user_messages (user_id, full_name, username, message_count) 
-            VALUES (?, ?, ?, 1)
-        ''', (user_id, full_name, username))
-        
-    conn.commit()
-    conn.close()
+    async with aiosqlite.connect('messages.db') as db:
+        async with db.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            
+        if row:
+            new_count = row[0] + 1
+            await db.execute('''
+                UPDATE user_messages 
+                SET message_count = ?, full_name = ?, username = ? 
+                WHERE user_id = ?
+            ''', (new_count, full_name, username, user_id))
+        else:
+            await db.execute('''
+                INSERT INTO user_messages (user_id, full_name, username, message_count) 
+                VALUES (?, ?, ?, 1)
+            ''', (user_id, full_name, username, 1))
+        await db.commit()
 
-# دالة جلب عدد رسائل المستخدم
-def get_user_message_count(user_id):
-    conn = sqlite3.connect('messages.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,))
-    row = cursor.fetchone()
-    conn.close()
+# دالة جلب عدد الرسائل بسرعة
+async def get_user_message_count(user_id):
+    async with aiosqlite.connect('messages.db') as db:
+        async with db.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,)) as cursor:
+            row = await cursor.fetchone()
     return row[0] if row else 0
 
 # 2. أمر ايدي (Id Command)
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    track_message(user)
+    await track_message(user)
     
-    msg_count = get_user_message_count(user.id)
+    msg_count = await get_user_message_count(user.id)
     full_name = f"{user.first_name} {user.last_name or ''}".strip()
     username = f"@{user.username}" if user.username else "لا يوجد"
     
-    gender_text = "ولد" # التحديد الافتراضي أو التحليل الذكي
+    gender_text = "ولد"
     
     caption = (
         f"👤 **الاسم:** {full_name}\n"
@@ -110,7 +105,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 3. نظام شخصيات Honkai: Star Rail (HSR)
 async def hsr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    track_message(user)
+    await track_message(user)
     
     if not context.args:
         await update.message.reply_text("الرجاء إدخال الـ UID الخاص بك بعد الأمر، مثال:\n`/hsr 700000000`", parse_mode="Markdown")
@@ -122,7 +117,7 @@ async def hsr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             if response.status != 200:
-                await update.message.reply_text("❌ تعذر جلب بيانات الحساب. تأكد من صحة الـ UID وأن الملف الشخصي عام في اللعبة.")
+                await update.message.reply_text("❌ تعذر جلب بيانات الحساب. تأكد من صحة الـ UID وأن الملف الشخصي عام.")
                 return
             data = await response.json()
             
@@ -144,9 +139,38 @@ async def hsr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ حدث خطأ أثناء معالجة البيانات: {e}")
 
+# أدوات مساعدة للتصميم
+def create_gradient(width, height, color1, color2):
+    """توليد خلفية بتدرج لوني ناعم"""
+    base = Image.new('RGB', (width, height), color1)
+    top = Image.new('RGB', (width, height), color2)
+    mask = Image.new('L', (width, height))
+    mask_data = []
+    for y in range(height):
+        mask_data.extend([int(255 * (y / height))] * width)
+    mask.putdata(mask_data)
+    base.paste(top, (0, 0), mask)
+    return base
+
+def draw_shadow_text(draw, position, text, font, fill_color, shadow_color=(10, 10, 15), offset=(3, 3)):
+    """طباعة نص مع ظل لإعطاء تأثير 3D وعمق"""
+    x, y = position
+    draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow_color)
+    draw.text((x, y), text, font=font, fill=fill_color)
+
+def get_best_font(size):
+    """محاولة جلب خطوط النظام الممتازة للوضوح العالي"""
+    fonts_to_try = ["DejaVuSans.ttf", "arial.ttf", "FreeSans.ttf"]
+    for f in fonts_to_try:
+        try:
+            return ImageFont.truetype(f, size)
+        except IOError:
+            continue
+    return ImageFont.load_default()
+
 async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer("جاري تصميم البطاقة...", show_alert=False)
     
     data_parts = query.data.split("_")
     uid = data_parts[1]
@@ -173,44 +197,86 @@ async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rarity = selected_char.get("rarity", 5)
     element = selected_char.get("element", {}).get("name", "Unknown")
     
-    # تصميم بطاقة الشخصية بالفوتوشوب البرمجي (Pillow)
-    card = Image.new("RGB", (800, 450), color=(25, 25, 35))
+    # ⚙️ حساب الإحصائيات الدقيقة (الأساسي + الإضافي)
+    base_stats = {a["name"]: a["value"] for a in selected_char.get("attributes", [])}
+    add_stats = {a["name"]: a["value"] for a in selected_char.get("additions", [])}
+    
+    def format_stat(stat_name, val):
+        if "CRIT" in stat_name or "Boost" in stat_name or "Effect" in stat_name or "Regen" in stat_name:
+            return f"{val * 100:.1f}%"
+        return f"{int(val):,}"
+
+    target_stats = ["HP", "ATK", "DEF", "SPD", "CRIT Rate", "CRIT DMG"]
+    display_stats = []
+    for st in target_stats:
+        total_val = base_stats.get(st, 0) + add_stats.get(st, 0)
+        if total_val > 0:
+            display_stats.append((st, format_stat(st, total_val)))
+
+    # 🎨 تصميم البطاقة الاحترافية (High-Res 1200x675)
+    color_top = (18, 20, 35)    # كحلي غامق
+    color_bottom = (40, 25, 55) # بنفسجي عميق
+    card = create_gradient(1200, 675, color_top, color_bottom)
     draw = ImageDraw.Draw(card)
     
-    try:
-        font = ImageFont.truetype("arial.ttf", 28)
-        font_small = ImageFont.truetype("arial.ttf", 20)
-    except:
-        font = ImageFont.load_default()
-        font_small = ImageFont.load_default()
-        
-    draw.rectangle([20, 20, 780, 430], outline=(255, 215, 0), width=3)
-    draw.text((40, 40), f"Character: {name}", fill=(255, 255, 255), font=font)
-    draw.text((40, 90), f"Level: {level} | Rarity: {rarity}★", fill=(200, 200, 200), font=font_small)
-    draw.text((40, 130), f"Element: {element}", fill=(200, 200, 200), font=font_small)
-    draw.text((40, 180), f"UID: {uid}", fill=(150, 150, 150), font=font_small)
+    font_title = get_best_font(75)
+    font_sub = get_best_font(45)
+    font_stat_label = get_best_font(40)
+    font_stat_val = get_best_font(40)
+    
+    # النصوص الأساسية (بدون مربعات، مدمجة مع الخلفية بظلال)
+    draw_shadow_text(draw, (70, 70), f"{name}", font_title, (255, 220, 100))
+    draw_shadow_text(draw, (70, 170), f"Level: {level}   |   Rarity: {rarity}★   |   Element: {element}", font_sub, (230, 230, 230))
+    
+    # رسم الإحصائيات بشكل عصري ومرتب
+    start_x, start_y = 70, 280
+    y_offset = 0
+    for stat_name, stat_val in display_stats:
+        draw_shadow_text(draw, (start_x, start_y + y_offset), f"{stat_name}", font_stat_label, (180, 190, 200))
+        draw_shadow_text(draw, (start_x + 350, start_y + y_offset), f"{stat_val}", font_stat_val, (255, 255, 255))
+        y_offset += 65
+    
+    draw_shadow_text(draw, (70, 590), f"UID: {uid}", font_sub, (120, 120, 140))
     
     bio = BytesIO()
-    card.save(bio, "JPEG")
+    card.save(bio, "PNG", quality=100) # استخدام PNG للحفاظ على أعلى دقة
     bio.seek(0)
     
-    await query.message.reply_photo(photo=bio, caption=f"✨ بطاقة الشخصية: **{name}**", parse_mode="Markdown")
+    await query.message.reply_photo(photo=bio, caption=f"✨ **إحصائيات {name} الدقيقة**", parse_mode="Markdown")
 
-# 4. مراقب الرسائل العام (Message Listener)
+# 4. مراقب الرسائل والرد عند المنشن
 async def message_listener(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user and update.message:
-        track_message(update.effective_user)
+    if not update.effective_user or not update.message:
+        return
         
-        text = update.message.text or ""
-        if text.strip() == "ايدي":
-            await id_command(update, context)
+    user = update.effective_user
+    await track_message(user)
+    
+    text = update.message.text or ""
+    
+    if text.strip() == "ايدي":
+        await id_command(update, context)
+        return
+
+    bot_username = context.bot.username
+    is_mentioned = f"@{bot_username}" in text
+    is_reply_to_bot = update.message.reply_to_message and update.message.reply_to_message.from_user.id == context.bot.id
+
+    if is_mentioned or is_reply_to_bot:
+        ai_reply_text = (
+            "مرحباً! أنا مساعدك الذكي 🤖\n"
+            "يبدو أنك بحاجة للمساعدة، إليك ما يمكنك فعله:\n"
+            "• اكتب **ايدي** لعرض معلومات حسابك وعدد رسائلك.\n"
+            "• استخدم الأمر `/hsr [UID]` لعرض بطاقات شخصياتك بدقة عالية."
+        )
+        await update.message.reply_text(ai_reply_text, parse_mode="Markdown")
 
 # 5. السيرفر الوهمي للبقاء مستيقظاً 24/7 (Dummy Server)
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "Bot is alive, connected to DB and running 24/7!"
+    return "Bot is alive, highly optimized, and running 24/7!"
 
 def run_web():
     app_web.run(host='0.0.0.0', port=8080)
@@ -228,17 +294,14 @@ def main():
 
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # تسجيل الهاندلرز والأوامر
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("hsr", hsr_command))
     application.add_handler(CommandHandler("start", hsr_command))
     application.add_handler(CallbackQueryHandler(hsr_callback, pattern="^hsr_"))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_listener))
 
-    # تشغيل السيرفر الوهمي في الخلفية
     keep_alive()
-    
-    print("Bot is up and running smoothly...")
+    print("Bot is up and running with High-Res Cards...")
     application.run_polling()
 
 if __name__ == '__main__':
