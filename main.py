@@ -2,7 +2,6 @@ import os
 import sqlite3
 import logging
 import aiohttp
-import aiosqlite
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from flask import Flask
@@ -23,7 +22,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# 1. إعداد قاعدة البيانات الأولية (تُنفذ مرة واحدة عند التشغيل)
+# 1. إعداد قاعدة البيانات الأولية
 def init_db():
     conn = sqlite3.connect('messages.db')
     cursor = conn.cursor()
@@ -40,46 +39,52 @@ def init_db():
 
 init_db()
 
-# دالة لتسجيل الرسائل بشكل غير متزامن (لأقصى سرعة)
-async def track_message(user):
+# دالة لتسجيل الرسائل بشكل مستقر وآمن
+def track_message(user):
     if user.is_bot:
         return
+    
+    conn = sqlite3.connect('messages.db')
+    cursor = conn.cursor()
     
     user_id = user.id
     full_name = f"{user.first_name} {user.last_name or ''}".strip()
     username = f"@{user.username}" if user.username else "لا يوجد"
     
-    async with aiosqlite.connect('messages.db') as db:
-        async with db.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,)) as cursor:
-            row = await cursor.fetchone()
-            
-        if row:
-            new_count = row[0] + 1
-            await db.execute('''
-                UPDATE user_messages 
-                SET message_count = ?, full_name = ?, username = ? 
-                WHERE user_id = ?
-            ''', (new_count, full_name, username, user_id))
-        else:
-            await db.execute('''
-                INSERT INTO user_messages (user_id, full_name, username, message_count) 
-                VALUES (?, ?, ?, 1)
-            ''', (user_id, full_name, username, 1))
-        await db.commit()
+    cursor.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,))
+    row = cursor.fetchone()
+    
+    if row:
+        new_count = row[0] + 1
+        cursor.execute('''
+            UPDATE user_messages 
+            SET message_count = ?, full_name = ?, username = ? 
+            WHERE user_id = ?
+        ''', (new_count, full_name, username, user_id))
+    else:
+        cursor.execute('''
+            INSERT INTO user_messages (user_id, full_name, username, message_count) 
+            VALUES (?, ?, ?, 1)
+        ''', (user_id, full_name, username))
+        
+    conn.commit()
+    conn.close()
 
-# دالة جلب عدد الرسائل بسرعة
-async def get_user_message_count(user_id):
-    async with aiosqlite.connect('messages.db') as db:
-        async with db.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,)) as cursor:
-            row = await cursor.fetchone()
+# دالة جلب عدد الرسائل
+def get_user_message_count(user_id):
+    conn = sqlite3.connect('messages.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,))
+    row = cursor.fetchone()
+    conn.close()
     return row[0] if row else 0
 
 # 2. أمر ايدي (Id Command)
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    await track_message(user)
+    track_message(user)
     
-    msg_count = await get_user_message_count(user.id)
+    msg_count = get_user_message_count(user.id)
     full_name = f"{user.first_name} {user.last_name or ''}".strip()
     username = f"@{user.username}" if user.username else "لا يوجد"
     
@@ -102,10 +107,36 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text(caption, parse_mode="Markdown")
 
+# أدوات مساعدة للتصميم (البطاقة الاحترافية)
+def create_gradient(width, height, color1, color2):
+    base = Image.new('RGB', (width, height), color1)
+    top = Image.new('RGB', (width, height), color2)
+    mask = Image.new('L', (width, height))
+    mask_data = []
+    for y in range(height):
+        mask_data.extend([int(255 * (y / height))] * width)
+    mask.putdata(mask_data)
+    base.paste(top, (0, 0), mask)
+    return base
+
+def draw_shadow_text(draw, position, text, font, fill_color, shadow_color=(10, 10, 15), offset=(3, 3)):
+    x, y = position
+    draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow_color)
+    draw.text((x, y), text, font=font, fill=fill_color)
+
+def get_best_font(size):
+    fonts_to_try = ["DejaVuSans.ttf", "arial.ttf", "FreeSans.ttf"]
+    for f in fonts_to_try:
+        try:
+            return ImageFont.truetype(f, size)
+        except IOError:
+            continue
+    return ImageFont.load_default()
+
 # 3. نظام شخصيات Honkai: Star Rail (HSR)
 async def hsr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    await track_message(user)
+    track_message(user)
     
     if not context.args:
         await update.message.reply_text("الرجاء إدخال الـ UID الخاص بك بعد الأمر، مثال:\n`/hsr 700000000`", parse_mode="Markdown")
@@ -139,35 +170,6 @@ async def hsr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ حدث خطأ أثناء معالجة البيانات: {e}")
 
-# أدوات مساعدة للتصميم
-def create_gradient(width, height, color1, color2):
-    """توليد خلفية بتدرج لوني ناعم"""
-    base = Image.new('RGB', (width, height), color1)
-    top = Image.new('RGB', (width, height), color2)
-    mask = Image.new('L', (width, height))
-    mask_data = []
-    for y in range(height):
-        mask_data.extend([int(255 * (y / height))] * width)
-    mask.putdata(mask_data)
-    base.paste(top, (0, 0), mask)
-    return base
-
-def draw_shadow_text(draw, position, text, font, fill_color, shadow_color=(10, 10, 15), offset=(3, 3)):
-    """طباعة نص مع ظل لإعطاء تأثير 3D وعمق"""
-    x, y = position
-    draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow_color)
-    draw.text((x, y), text, font=font, fill=fill_color)
-
-def get_best_font(size):
-    """محاولة جلب خطوط النظام الممتازة للوضوح العالي"""
-    fonts_to_try = ["DejaVuSans.ttf", "arial.ttf", "FreeSans.ttf"]
-    for f in fonts_to_try:
-        try:
-            return ImageFont.truetype(f, size)
-        except IOError:
-            continue
-    return ImageFont.load_default()
-
 async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("جاري تصميم البطاقة...", show_alert=False)
@@ -197,7 +199,6 @@ async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rarity = selected_char.get("rarity", 5)
     element = selected_char.get("element", {}).get("name", "Unknown")
     
-    # ⚙️ حساب الإحصائيات الدقيقة (الأساسي + الإضافي)
     base_stats = {a["name"]: a["value"] for a in selected_char.get("attributes", [])}
     add_stats = {a["name"]: a["value"] for a in selected_char.get("additions", [])}
     
@@ -213,9 +214,9 @@ async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if total_val > 0:
             display_stats.append((st, format_stat(st, total_val)))
 
-    # 🎨 تصميم البطاقة الاحترافية (High-Res 1200x675)
-    color_top = (18, 20, 35)    # كحلي غامق
-    color_bottom = (40, 25, 55) # بنفسجي عميق
+    # تصميم البطاقة
+    color_top = (18, 20, 35)
+    color_bottom = (40, 25, 55)
     card = create_gradient(1200, 675, color_top, color_bottom)
     draw = ImageDraw.Draw(card)
     
@@ -224,11 +225,9 @@ async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     font_stat_label = get_best_font(40)
     font_stat_val = get_best_font(40)
     
-    # النصوص الأساسية (بدون مربعات، مدمجة مع الخلفية بظلال)
     draw_shadow_text(draw, (70, 70), f"{name}", font_title, (255, 220, 100))
     draw_shadow_text(draw, (70, 170), f"Level: {level}   |   Rarity: {rarity}★   |   Element: {element}", font_sub, (230, 230, 230))
     
-    # رسم الإحصائيات بشكل عصري ومرتب
     start_x, start_y = 70, 280
     y_offset = 0
     for stat_name, stat_val in display_stats:
@@ -239,18 +238,18 @@ async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     draw_shadow_text(draw, (70, 590), f"UID: {uid}", font_sub, (120, 120, 140))
     
     bio = BytesIO()
-    card.save(bio, "PNG", quality=100) # استخدام PNG للحفاظ على أعلى دقة
+    card.save(bio, "PNG", quality=100)
     bio.seek(0)
     
     await query.message.reply_photo(photo=bio, caption=f"✨ **إحصائيات {name} الدقيقة**", parse_mode="Markdown")
 
-# 4. مراقب الرسائل والرد عند المنشن
+# 4. مراقب الرسائل والرد
 async def message_listener(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.message:
         return
         
     user = update.effective_user
-    await track_message(user)
+    track_message(user)
     
     text = update.message.text or ""
     
@@ -271,12 +270,12 @@ async def message_listener(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(ai_reply_text, parse_mode="Markdown")
 
-# 5. السيرفر الوهمي للبقاء مستيقظاً 24/7 (Dummy Server)
+# 5. السيرفر الوهمي
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "Bot is alive, highly optimized, and running 24/7!"
+    return "Bot is alive and running safely!"
 
 def run_web():
     app_web.run(host='0.0.0.0', port=8080)
@@ -285,7 +284,6 @@ def keep_alive():
     t = Thread(target=run_web)
     t.start()
 
-# الدالة الرئيسية لتشغيل البوت
 def main():
     TOKEN = os.environ.get("BOT_TOKEN")
     if not TOKEN:
@@ -301,8 +299,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_listener))
 
     keep_alive()
-    print("Bot is up and running with High-Res Cards...")
-    
+    print("Bot is up and running safely...")
     application.run_polling()
 
 if __name__ == '__main__':
