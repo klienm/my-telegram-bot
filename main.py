@@ -1,5 +1,6 @@
 import os
 import math
+import asyncio
 import sqlite3
 import logging
 import aiohttp
@@ -789,6 +790,15 @@ def main():
     if not TOKEN:
         logging.error("Error: BOT_TOKEN environment variable not found!")
         return
+
+    # إصلاح: بايثون 3.12+ ما عاد ينشئ event loop تلقائياً بالـ MainThread،
+    # ومكتبة python-telegram-bot لسا بتعتمد على asyncio.get_event_loop() داخلياً.
+    # ننشئ الـ loop يدوياً هون قبل أي شي حتى نتجنب:
+    # "RuntimeError: There is no current event loop in thread 'MainThread'"
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
     application = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
