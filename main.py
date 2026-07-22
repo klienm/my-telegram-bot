@@ -175,7 +175,6 @@ def resize_cover(img, target_w, target_h):
     return img.crop((left, top, left + target_w, top + target_h))
 
 
-# تم تحديث الروابط للعمل بشكل مباشر بدون 404
 FONT_BOLD_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Bold.ttf"
 FONT_REG_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Medium.ttf"
 
@@ -774,7 +773,7 @@ def keep_alive():
 
 
 async def post_init(application):
-    await download_fonts_on_startup():
+    await download_fonts_on_startup()
     bot_info = await application.bot.get_me()
     application.bot_data["username"] = bot_info.username
     logging.info(f"🤖 Bot @{bot_info.username} is fully initialized and ready!")
