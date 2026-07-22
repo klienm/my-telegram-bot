@@ -22,9 +22,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# 1. إعداد قاعدة البيانات الأولية
+# إعداد قاعدة البيانات لتخزين الرسائل
 def init_db():
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect('messages.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_messages (
@@ -39,12 +39,12 @@ def init_db():
 
 init_db()
 
-# دالة لتسجيل الرسائل بشكل مستقر وآمن
+# دالة تسجيل وحساب الرسائل
 def track_message(user):
     if user.is_bot:
         return
     
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect('messages.db', check_same_thread=False, timeout=10)
     cursor = conn.cursor()
     
     user_id = user.id
@@ -70,25 +70,27 @@ def track_message(user):
     conn.commit()
     conn.close()
 
-# دالة جلب عدد الرسائل
+# دالة جلب عدد رسائل المستخدم
 def get_user_message_count(user_id):
-    conn = sqlite3.connect('messages.db')
+    conn = sqlite3.connect('messages.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT message_count FROM user_messages WHERE user_id = ?', (user_id,))
     row = cursor.fetchone()
     conn.close()
     return row[0] if row else 0
 
-# 2. أمر ايدي (Id Command)
+# أمر ايدي المطور
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    track_message(user)
+    if not user:
+        return
     
+    # لا داعي لزيادة العداد هنا لأن مراقب الرسائل سيزيده
     msg_count = get_user_message_count(user.id)
     full_name = f"{user.first_name} {user.last_name or ''}".strip()
     username = f"@{user.username}" if user.username else "لا يوجد"
     
-    gender_text = "ولد"
+    gender_text = "ولد" 
     
     caption = (
         f"👤 **الاسم:** {full_name}\n"
@@ -107,7 +109,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text(caption, parse_mode="Markdown")
 
-# أدوات مساعدة للتصميم (البطاقة الاحترافية)
+# أدوات مساعدة للتصميم
 def create_gradient(width, height, color1, color2):
     base = Image.new('RGB', (width, height), color1)
     top = Image.new('RGB', (width, height), color2)
@@ -133,11 +135,8 @@ def get_best_font(size):
             continue
     return ImageFont.load_default()
 
-# 3. نظام شخصيات Honkai: Star Rail (HSR)
+# نظام شخصيات Honkai: Star Rail (HSR)
 async def hsr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    track_message(user)
-    
     if not context.args:
         await update.message.reply_text("الرجاء إدخال الـ UID الخاص بك بعد الأمر، مثال:\n`/hsr 700000000`", parse_mode="Markdown")
         return
@@ -214,7 +213,6 @@ async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if total_val > 0:
             display_stats.append((st, format_stat(st, total_val)))
 
-    # تصميم البطاقة
     color_top = (18, 20, 35)
     color_bottom = (40, 25, 55)
     card = create_gradient(1200, 675, color_top, color_bottom)
@@ -243,39 +241,41 @@ async def hsr_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.message.reply_photo(photo=bio, caption=f"✨ **إحصائيات {name} الدقيقة**", parse_mode="Markdown")
 
-# 4. مراقب الرسائل والرد
+# مراقب الرسائل والرد الذكي
 async def message_listener(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.effective_user or not update.message:
+    if not update.effective_user or not update.message or not update.message.text:
         return
         
     user = update.effective_user
     track_message(user)
     
-    text = update.message.text or ""
+    text = update.message.text.strip()
     
-    if text.strip() == "ايدي":
+    # 1. التقاط كلمة ايدي بأكثر من شكل
+    if text in ["ايدي", "أيدي", "إيدي", "ايدى"]:
         await id_command(update, context)
         return
 
+    # 2. الرد على المنشن أو الرد على البوت
     bot_username = context.bot.username
-    is_mentioned = f"@{bot_username}" in text
+    is_mentioned = bot_username and (f"@{bot_username}" in text)
     is_reply_to_bot = update.message.reply_to_message and update.message.reply_to_message.from_user.id == context.bot.id
 
     if is_mentioned or is_reply_to_bot:
         ai_reply_text = (
-            "مرحباً! أنا مساعدك الذكي 🤖\n"
-            "يبدو أنك بحاجة للمساعدة، إليك ما يمكنك فعله:\n"
-            "• اكتب **ايدي** لعرض معلومات حسابك وعدد رسائلك.\n"
+            "مرحباً! أنا مساعدك الذكي 🤖\n\n"
+            "إليك ما يمكنني فعله:\n"
+            "• اكتب كلمة **ايدي** لعرض معلومات حسابك وعدد رسائلك.\n"
             "• استخدم الأمر `/hsr [UID]` لعرض بطاقات شخصياتك بدقة عالية."
         )
         await update.message.reply_text(ai_reply_text, parse_mode="Markdown")
 
-# 5. السيرفر الوهمي
+# السيرفر الوهمي
 app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "Bot is alive and running safely!"
+    return "Bot is alive and running!"
 
 def run_web():
     app_web.run(host='0.0.0.0', port=8080)
@@ -299,7 +299,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_listener))
 
     keep_alive()
-    print("Bot is up and running safely...")
+    print("Bot is up and running...")
     application.run_polling()
 
 if __name__ == '__main__':
