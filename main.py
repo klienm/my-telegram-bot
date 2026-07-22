@@ -302,6 +302,7 @@ def main():
 
     keep_alive()
     print("Bot is up and running with High-Res Cards...")
+    
     application.run_polling()
 
 if __name__ == '__main__':
