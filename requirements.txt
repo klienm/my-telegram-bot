@@ -1,5 +1,4 @@
 python-telegram-bot
 flask
-pillow
+Pillow
 aiohttp
-aiosqlite
