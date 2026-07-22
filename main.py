@@ -148,7 +148,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------------------------------------------------------
-# أدوات مساعدة للتصميم
+# أدوات مساعدة للتصميم والخطوط
 # ---------------------------------------------------------------------------
 
 async def fetch_image(session, url):
@@ -175,8 +175,8 @@ def resize_cover(img, target_w, target_h):
     return img.crop((left, top, left + target_w, top + target_h))
 
 
-FONT_BOLD_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Bold.ttf"
-FONT_REG_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Medium.ttf"
+FONT_BOLD_URL = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/montserrat/Montserrat-Bold.ttf"
+FONT_REG_URL = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/montserrat/Montserrat-Medium.ttf"
 
 temp_dir = tempfile.gettempdir()
 LOCAL_BOLD_PATH = os.path.join(temp_dir, "Montserrat-Bold.ttf")
@@ -268,10 +268,6 @@ def get_dominant_color(img):
 
 def draw_soft_text(base_img, draw, position, text, font, fill,
                    shadow_color=(0, 0, 0, 175), blur_radius=5, offset=(0, 4)):
-    """
-    يرسم نص فوق ظل ناعم (مموّه) بدل ظل حاد بأوفست، حتى يصير شكل الكارد أهدأ للعين.
-    يشتغل بس على مساحة النص (مو الكارد كامل) حتى يضل سريع.
-    """
     x, y = position
     bbox = draw.textbbox((x, y), text, font=font)
     pad = blur_radius * 3 + 12
@@ -289,7 +285,6 @@ def draw_soft_text(base_img, draw, position, text, font, fill,
 
 
 def draw_panel(base_img, box, radius=22, fill=(8, 10, 20, 145), outline=(255, 255, 255, 30), outline_width=2):
-    """لوحة خلفية شبه شفافة بزوايا دائرية، تحسن التباين وتخلي كل قسم يبين مرتب وواضح."""
     x0, y0, x1, y1 = [int(v) for v in box]
     w, h = x1 - x0, y1 - y0
     if w <= 0 or h <= 0:
